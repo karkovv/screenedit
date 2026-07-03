@@ -46,4 +46,7 @@ export const strings = {
   downloadStyledImage: { en: "Download styled image", ru: "Скачать изображение" },
   copyToClipboard: { en: "Copy to clipboard", ru: "Скопировать в буфер" },
   copied: { en: "Copied!", ru: "Скопировано!" },
+
+  // Footer
+  footerPrivacy: { en: "ScreenStyler runs entirely in your browser. We don't store, upload, or share your images.", ru: "ScreenStyler работает полностью в вашем браузере. Мы не храним, не загружаем и не передаём ваши изображения." },
 };

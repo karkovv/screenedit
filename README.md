@@ -1,4 +1,4 @@
-# Screenshot Styler
+# ScreenStyler
 
 Web app for styling screenshots: upload → background, rounded corners, shadow → export PNG.
 

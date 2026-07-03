@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { Link } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useLang } from "../translations/LangProvider";
 import {
@@ -747,6 +748,16 @@ export default function App() {
 
       {/* Hidden canvas for export */}
       <canvas ref={canvasRef} className="hidden" />
+
+      {/* Footer */}
+      <div className="shrink-0 px-5 py-2 border-t border-border bg-card text-center flex items-center justify-center gap-3">
+        <Link
+          to="/privacy"
+          className="text-[11px] text-muted-foreground/60 hover:text-[#49c5b6] transition-colors select-none"
+        >
+          {t("footerPrivacy")}
+        </Link>
+      </div>
     </div>
   );
 }
