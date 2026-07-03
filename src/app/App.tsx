@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { useLang } from "../translations/LangProvider";
 import {
   Upload,
   Download,
@@ -8,6 +9,7 @@ import {
   Image,
   Sun,
   Moon,
+  X,
 } from "lucide-react";
 
 function useTheme() {
@@ -40,6 +42,7 @@ interface StyleSettings {
   bgColor: string;
   gradientFrom: string;
   gradientTo: string;
+  gradientAngle: number;
   bgWidth: number;
   bgHeight: number;
   borderRadius: number;
@@ -53,6 +56,7 @@ const DEFAULT_SETTINGS: StyleSettings = {
   bgColor: "#ffffff",
   gradientFrom: "#49c5b6",
   gradientTo: "#2779a7",
+  gradientAngle: 135,
   bgWidth: 1920,
   bgHeight: 1080,
   borderRadius: 16,
@@ -68,8 +72,22 @@ function hexToRgb(hex: string) {
   return { r, g, b };
 }
 
+function getGradientCoords(bw: number, bh: number, angleDeg: number) {
+  const angle = (angleDeg * Math.PI) / 180;
+  const cx = bw / 2;
+  const cy = bh / 2;
+  const hd = Math.sqrt(cx * cx + cy * cy);
+  return {
+    x0: cx - Math.sin(angle) * hd,
+    y0: cy + Math.cos(angle) * hd,
+    x1: cx + Math.sin(angle) * hd,
+    y1: cy - Math.cos(angle) * hd,
+  };
+}
+
 export default function App() {
   const { dark, toggle: toggleTheme } = useTheme();
+  const { lang, toggle: toggleLang, t } = useLang();
   const [image, setImage] = useState<string | null>(null);
   const [settings, setSettings] = useState<StyleSettings>(DEFAULT_SETTINGS);
   const [isDragging, setIsDragging] = useState(false);
@@ -128,7 +146,8 @@ export default function App() {
           ctx.save();
           roundedRect(ctx, 0, 0, bw, bh, r);
           if (settings.bgType === "gradient") {
-            const grd = ctx.createLinearGradient(0, 0, bw, bh);
+            const { x0, y0, x1, y1 } = getGradientCoords(bw, bh, settings.gradientAngle);
+            const grd = ctx.createLinearGradient(x0, y0, x1, y1);
             grd.addColorStop(0, settings.gradientFrom);
             grd.addColorStop(1, settings.gradientTo);
             ctx.fillStyle = grd;
@@ -183,6 +202,20 @@ export default function App() {
     reader.readAsDataURL(file);
   }, []);
 
+  // Paste from clipboard
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) =>
+        i.type.startsWith("image/"),
+      );
+      if (!item) return;
+      const file = item.getAsFile();
+      if (file) handleFile(file);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [handleFile]);
+
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -196,6 +229,11 @@ export default function App() {
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+  };
+
+  const clearImage = () => {
+    setImage(null);
+    setPreviewUrl(null);
   };
 
   const handleDownload = async () => {
@@ -246,7 +284,16 @@ export default function App() {
             ScreenStyler
           </span>
         </div>
-        <button
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={toggleLang}
+            aria-label={lang}
+            title={lang === "en" ? "Русский" : "English"}
+            className="w-10 h-10 flex items-center justify-center rounded-lg border border-border font-bold text-xs tracking-wider text-muted-foreground hover:bg-muted transition-colors active:scale-[0.96]"
+          >
+            {lang === "en" ? "EN" : "RU"}
+          </button>
+          <button
           onClick={toggleTheme}
           aria-label="Toggle dark mode"
           title={dark ? "Light mode" : "Dark mode"}
@@ -280,6 +327,7 @@ export default function App() {
             </AnimatePresence>
           </div>
         </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -295,7 +343,7 @@ export default function App() {
               }}
             >
               <h2 className="text-base font-semibold text-foreground">
-                Upload &amp; Settings
+                {t("uploadAndSettings")}
               </h2>
 
               {/* Upload area */}
@@ -314,6 +362,17 @@ export default function App() {
                 onDrop={onDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
+                {image && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); clearImage(); }}
+                    aria-label="Remove image"
+                    title={t("remove")}
+                    className="absolute top-2 right-2 z-10 w-8 h-8 flex items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-red-500 hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer"
+                    style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -332,20 +391,20 @@ export default function App() {
                 {image ? (
                   <div>
                     <p className="text-sm font-medium text-foreground">
-                      Image loaded
+                      {t("imageLoaded")}
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      Click or drag to replace
+                      {t("clickToReplace")}
                     </p>
                   </div>
                 ) : (
                   <div>
                     <p className="text-sm font-medium text-foreground">
-                      Drop your screenshot or{" "}
-                      <span className="text-[#49c5b6]">click to browse</span>
+                      {t("dropScreenshot")}{" "}
+                      <span className="text-[#49c5b6]">{t("clickToBrowse")}</span>
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      PNG, JPG, WebP — any size
+                      {t("anySize")}
                     </p>
                   </div>
                 )}
@@ -353,28 +412,28 @@ export default function App() {
 
               {/* Styling controls */}
               <div className="flex flex-col gap-5">
-                <SectionLabel>Styling Controls</SectionLabel>
+                <SectionLabel>{t("stylingControls")}</SectionLabel>
 
                 {/* Background */}
-                <ControlRow label="Background">
+                <ControlRow label={t("background")}>
                   <div className="flex items-center gap-2 flex-wrap min-h-[44px]">
                     <BgToggle
                       active={settings.bgType === "solid"}
                       onClick={() => update({ bgType: "solid" })}
                     >
-                      Solid
+                      {t("solid")}
                     </BgToggle>
                     <BgToggle
                       active={settings.bgType === "gradient"}
                       onClick={() => update({ bgType: "gradient" })}
                     >
-                      Gradient
+                      {t("gradient")}
                     </BgToggle>
                     <BgToggle
                       active={settings.bgType === "transparent"}
                       onClick={() => update({ bgType: "transparent" })}
                     >
-                      None
+                      {t("none")}
                     </BgToggle>
                     {settings.bgType === "solid" && (
                       <label className="flex items-center gap-1.5 cursor-pointer">
@@ -393,49 +452,78 @@ export default function App() {
                       </label>
                     )}
                     {settings.bgType === "gradient" && (
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-1.5 cursor-pointer group">
-                          <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer transition-shadow group-hover:shadow-md">
-                            <span
-                              className="w-5 h-5 rounded-sm"
-                              style={{ background: settings.gradientFrom }}
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="flex items-center gap-1.5 cursor-pointer group">
+                            <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer transition-shadow group-hover:shadow-md">
+                              <span
+                                className="w-5 h-5 rounded-sm"
+                                style={{ background: settings.gradientFrom }}
+                              />
+                            </span>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("from")}</span>
+                            <input
+                              type="color"
+                              value={settings.gradientFrom}
+                              onChange={(e) =>
+                                update({ gradientFrom: e.target.value })
+                              }
+                              className="sr-only"
                             />
-                          </span>
-                          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">From</span>
-                          <input
-                            type="color"
-                            value={settings.gradientFrom}
-                            onChange={(e) =>
-                              update({ gradientFrom: e.target.value })
-                            }
-                            className="sr-only"
-                          />
-                        </label>
-                        <span className="text-xs text-muted-foreground/50">→</span>
-                        <label className="flex items-center gap-1.5 cursor-pointer group">
-                          <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer transition-shadow group-hover:shadow-md">
-                            <span
-                              className="w-5 h-5 rounded-sm"
-                              style={{ background: settings.gradientTo }}
+                          </label>
+                          <span className="text-xs text-muted-foreground/50">→</span>
+                          <label className="flex items-center gap-1.5 cursor-pointer group">
+                            <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer transition-shadow group-hover:shadow-md">
+                              <span
+                                className="w-5 h-5 rounded-sm"
+                                style={{ background: settings.gradientTo }}
+                              />
+                            </span>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("to")}</span>
+                            <input
+                              type="color"
+                              value={settings.gradientTo}
+                              onChange={(e) =>
+                                update({ gradientTo: e.target.value })
+                              }
+                              className="sr-only"
                             />
-                          </span>
-                          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">To</span>
-                          <input
-                            type="color"
-                            value={settings.gradientTo}
-                            onChange={(e) =>
-                              update({ gradientTo: e.target.value })
-                            }
-                            className="sr-only"
-                          />
-                        </label>
+                          </label>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <GradientAngleIndicator angle={settings.gradientAngle} />
+                          <div className="flex-1 min-w-0 flex items-center gap-2">
+                            <div className="flex-1 min-w-0">
+                              <StyledSlider
+                                min={0}
+                                max={360}
+                                value={settings.gradientAngle}
+                                onChange={(v) => update({ gradientAngle: v })}
+                              />
+                            </div>
+                            <label className="flex items-center gap-0.5 shrink-0">
+                              <input
+                                type="number"
+                                min={0}
+                                max={360}
+                                value={settings.gradientAngle}
+                                onChange={(e) => {
+                                  const v = Number(e.target.value);
+                                  if (!isNaN(v)) update({ gradientAngle: Math.max(0, Math.min(360, v)) });
+                                }}
+                                className="w-16 h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground font-mono text-center tabular-nums"
+                              />
+                              <span className="text-xs text-muted-foreground font-mono">°</span>
+                            </label>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
                 </ControlRow>
 
                 {/* Padding */}
-                <ControlRow label={`Padding — ${settings.padding}px`}>
+                <ControlRow label={`${t("padding")} — ${settings.padding}px`}>
                   <StyledSlider
                     min={0}
                     max={80}
@@ -445,7 +533,7 @@ export default function App() {
                 </ControlRow>
 
                 {/* Background size */}
-                <ControlRow label="Canvas Size">
+                <ControlRow label={t("canvasSize")}>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       W
@@ -485,7 +573,7 @@ export default function App() {
 
                 {/* Background border radius */}
                 <ControlRow
-                  label={`Bg Radius — ${settings.borderRadius}px`}
+                  label={`${t("bgRadius")} — ${settings.borderRadius}px`}
                 >
                   <StyledSlider
                     min={0}
@@ -497,7 +585,7 @@ export default function App() {
 
                 {/* Image border radius */}
                 <ControlRow
-                  label={`Image Radius — ${settings.imageBorderRadius}px`}
+                  label={`${t("imageRadius")} — ${settings.imageBorderRadius}px`}
                 >
                   <StyledSlider
                     min={0}
@@ -509,8 +597,8 @@ export default function App() {
 
                 {/* Shadow */}
                 <div className="space-y-3">
-                  <SectionLabel>Shadow</SectionLabel>
-                  <ControlRow label={`Offset X — ${settings.shadow.x}px`}>
+                  <SectionLabel>{t("shadow")}</SectionLabel>
+                  <ControlRow label={`${t("offsetX")} — ${settings.shadow.x}px`}>
                     <StyledSlider
                       min={-40}
                       max={40}
@@ -518,7 +606,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ x: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`Offset Y — ${settings.shadow.y}px`}>
+                  <ControlRow label={`${t("offsetY")} — ${settings.shadow.y}px`}>
                     <StyledSlider
                       min={-40}
                       max={40}
@@ -526,7 +614,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ y: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`Blur — ${settings.shadow.blur}px`}>
+                  <ControlRow label={`${t("blur")} — ${settings.shadow.blur}px`}>
                     <StyledSlider
                       min={0}
                       max={80}
@@ -534,7 +622,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ blur: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`Spread — ${settings.shadow.spread}px`}>
+                  <ControlRow label={`${t("spread")} — ${settings.shadow.spread}px`}>
                     <StyledSlider
                       min={-20}
                       max={40}
@@ -542,7 +630,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ spread: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`Opacity — ${settings.shadow.opacity}%`}>
+                  <ControlRow label={`${t("opacity")} — ${settings.shadow.opacity}%`}>
                     <StyledSlider
                       min={0}
                       max={100}
@@ -550,7 +638,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ opacity: v })}
                     />
                   </ControlRow>
-                  <ControlRow label="Color">
+                  <ControlRow label={t("color")}>
                     <label className="flex items-center gap-1.5 cursor-pointer">
                       <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer">
                         <span
@@ -579,7 +667,7 @@ export default function App() {
                   className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#2779a7] transition-colors self-start mt-1 active:scale-[0.96] cursor-pointer"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  Reset to defaults
+                  {t("resetToDefaults")}
                 </button>
               </div>
             </div>
@@ -601,7 +689,7 @@ export default function App() {
                 {previewUrl ? (
                   <img
                     src={previewUrl}
-                    alt="Styled preview"
+                    alt={t("styledPreview")}
                     style={{
                       maxWidth: "100%",
                       maxHeight: "100%",
@@ -633,7 +721,7 @@ export default function App() {
                   }}
                 >
                   <Download className="w-4 h-4" />
-                  Download styled image
+                  {t("downloadStyledImage")}
                 </button>
 
                 <button
@@ -648,7 +736,7 @@ export default function App() {
                   }}
                 >
                   <Clipboard className="w-4 h-4" />
-                  {copied ? "Copied!" : "Copy to clipboard"}
+                  {copied ? t("copied") : t("copyToClipboard")}
                 </button>
               </div>
             </div>
@@ -665,7 +753,7 @@ export default function App() {
 
 /* ---- Sub-components ---- */
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: { children: any }) {
   return (
     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
       {children}
@@ -676,13 +764,15 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function ControlRow({
   label,
   children,
+  labelClassName,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: any;
+  labelClassName?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-foreground">{label}</span>
+      <span className={`text-xs font-medium text-foreground ${labelClassName ?? ""}`}>{label}</span>
       {children}
     </div>
   );
@@ -695,7 +785,7 @@ function BgToggle({
 }: {
   active: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: any;
 }) {
   return (
     <button
@@ -780,6 +870,7 @@ function StyledSlider({
 }
 
 function EmptyState() {
+  const { t } = useLang();
   return (
     <div className="flex flex-col items-center gap-4 select-none">
       <div className="w-64 h-44 rounded-2xl border-2 border-dashed border-border bg-muted flex flex-col items-center justify-center gap-3">
@@ -791,16 +882,38 @@ function EmptyState() {
         </div>
         <div className="text-center">
           <p className="text-sm font-medium text-muted-foreground text-balance">
-            No image yet
+            {t("noImageYet")}
           </p>
           <p className="text-xs text-muted-foreground/60 mt-0.5">
-            Upload to see your preview
+            {t("uploadToSeePreview")}
           </p>
         </div>
       </div>
       <p className="text-xs text-muted-foreground text-balance">
-        Your styled screenshot will appear here
+        {t("yourStyledScreenshot")}
       </p>
+    </div>
+  );
+}
+
+/* ---- Gradient angle indicator ---- */
+function GradientAngleIndicator({ angle }: { angle: number }) {
+  return (
+    <div
+      className="relative shrink-0 w-11 h-11 rounded-full border border-border bg-background flex items-center justify-center"
+      style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" }}
+    >
+      <div
+        className="absolute w-0.5 h-[14px] rounded-full"
+        style={{
+          background: "linear-gradient(90deg,#49c5b6,#2779a7)",
+          transform: `rotate(${angle}deg)`,
+          transformOrigin: "bottom center",
+          bottom: "calc(50% - 1px)",
+          left: "calc(50% - 1px)",
+          transition: "transform 0.15s cubic-bezier(0.2,0,0,1)",
+        }}
+      />
     </div>
   );
 }
