@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useLayoutEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Upload,
@@ -74,9 +74,26 @@ export default function App() {
   const [settings, setSettings] = useState<StyleSettings>(DEFAULT_SETTINGS);
   const [isDragging, setIsDragging] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Render preview — reactive, batched per frame
+  const renderVersion = useRef(0);
+  const rafRef = useRef(0);
+
+  useEffect(() => {
+    if (!image) return;
+    const version = ++renderVersion.current;
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(async () => {
+      const c = document.createElement("canvas");
+      await renderToCanvas(c, 0.5);
+      if (version !== renderVersion.current) return;
+      setPreviewUrl(c.toDataURL("image/png"));
+    });
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [image, settings]);
 
   // Render styled image to canvas
   const renderToCanvas = useCallback(
@@ -158,17 +175,6 @@ export default function App() {
     [image, settings],
   );
 
-  const rafRef = useRef(0);
-
-  useLayoutEffect(() => {
-    if (!image) return;
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      const canvas = previewCanvasRef.current;
-      if (canvas) renderToCanvas(canvas, 1);
-    });
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [image, renderToCanvas]);
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
@@ -592,12 +598,13 @@ export default function App() {
                       : "repeating-conic-gradient(#F3F4F6 0% 25%, #FFFFFF 0% 50%) 0 0 / 20px 20px",
                   }}
                 >
-                {image ? (
-                  <canvas
-                    ref={previewCanvasRef}
+                {previewUrl ? (
+                  <img
+                    src={previewUrl}
+                    alt="Styled preview"
                     style={{
-                      width: "100%",
-                      height: "100%",
+                      maxWidth: "100%",
+                      maxHeight: "100%",
                       objectFit: "contain",
                       display: "block",
                     }}
