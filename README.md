@@ -1,6 +1,6 @@
 # ScreenEdit
 
-Style your screenshots in seconds. Upload an image, add a background (solid/gradient/transparent), rounded corners, shadow — then download PNG or copy to clipboard.
+Edit and style your screenshots and images in seconds. Upload, crop, add background (solid/gradient/transparent), rounded corners, shadow — then download PNG or copy to clipboard.
 
 **→ https://screenedit.online**
 

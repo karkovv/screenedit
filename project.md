@@ -1,7 +1,9 @@
 # ScreenEdit
 
 ## Что это
-Веб-приложение для стилизации скриншотов: загрузка → наложение фона, скруглений, тени → экспорт PNG/JPEG/WebP.
+Веб-приложение для редактирования и стилизации скриншотов и изображений: загрузка → кроп → наложение фона (solid/gradient/transparent), скруглений, тени → экспорт PNG/JPEG/WebP.
+
+**→ https://screenedit.online**
 
 ## Стек
 - React 18 + TypeScript
@@ -18,13 +20,18 @@
 ```
 ScreenEdit web app/
 ├── heart-icon.svg           — иконка для кнопки доната
-├── index.html               — favicon: /logo.svg, dark class + CSP meta
+├── index.html               — SEO-метатеги (OG/Twitter/hreflang), CSP, favicon
 ├── logo.svg                 — логотип проекта
+├── vercel.json              — сборка, реврайты SPA
 ├── public/
+│   ├── favicon.ico          — копия logo.svg
 │   ├── logo.svg             — копия для статики
-│   └── qr-donate-donationalers.png — QR для донатов
+│   ├── og-img.png           — OG-изображение 137KB
+│   ├── qr-donate-donationalers.png — QR для донатов
+│   ├── robots.txt           — Allow: /, sitemap
+│   └── sitemap.xml          — / + /privacy
 ├── src/
-│   ├── main.tsx             — точка входа (BrowserRouter, Routes)
+│   ├── main.tsx             — точка входа + инжект JSON-LD
 │   ├── translations/
 │   │   ├── strings.ts       — EN/RU строки интерфейса
 │   │   ├── LangProvider.tsx — контекст и хук useLang()
@@ -38,6 +45,21 @@ ScreenEdit web app/
 │       ├── App.tsx          — основной UI (все контролы + превью)
 │       └── Privacy.tsx      — страница политики конфиденциальности
 ```
+
+## SEO / Продвижение
+- **Title**: «Редактирование и стилизация скриншотов и изображений онлайн | ScreenEdit»
+- **Description**: Бесплатный онлайн-редактор для стилизации скриншотов и изображений
+- **OG/Twitter**: заголовок, описание, изображение (og-img.png 1200×630)
+- **Hreflang**: ru, en, x-default → https://screenedit.online/
+- **JSON-LD** (инжектится через JS): SoftwareApplication, бесплатно, DesignApplication
+- **Robots**: index, follow
+- **Sitemap.xml**: / (1.0), /privacy (0.3)
+- **CSP**: `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:`
+
+## Домены
+- **screenedit.online** — основной (Vercel DNS, NS: ns1/ns2.vercel-dns.com)
+- **www.screenedit.online** — алиас
+- **screenstyler.vercel.app** — старый проект
 
 ## Основные фичи
 - Drag & drop / click / **Ctrl+V** загрузка изображения (лимит 50MB)
@@ -80,6 +102,7 @@ ScreenEdit web app/
 
 ## Оптимизация Canvas рендеринга
 - **ImageBitmap кеш** — изображение декодируется один раз при загрузке, переиспользуется на всех перерисовках (слайдеры, настройки)
+- **`bitmapVersion` state** — триггерит ре-рендер превью после загрузки ImageBitmap (фикс race condition)
 - **Temp canvas reuse** — временный canvas для shadow/rounded image создаётся один раз через ref, не аллоцируется заново
 - `imageSmoothingQuality: "high"` — качественный рендер при масштабировании
 - `settings.shadowEnabled` — отключение тени пропускает shadow-блок полностью
@@ -92,7 +115,7 @@ ScreenEdit web app/
 - Экспорт через `toBlob` с качеством 1.0 для JPEG/WebP
 
 ## Безопасность
-- **CSP** в index.html: `default-src 'self'`, ограничения на script/style/img/font/connect
+- **CSP** в index.html: `default-src 'self'`, `script-src 'self'` (без unsafe-inline)
 - Файлы загружаются только через `accept="image/*"` + MIME-проверка
 - Лимит размера файла: 50MB
 - `rel="noopener noreferrer"` на внешних ссылках
@@ -106,3 +129,4 @@ ScreenEdit web app/
 
 ## Известные баги / TODO
 - [ ] Нет обработки resize окна для canvas (export всегда полный размер, ок)
+- [ ] Нет английской версии OG-изображения (сейчас только RU)
