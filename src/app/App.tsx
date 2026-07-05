@@ -391,6 +391,7 @@ export default function App() {
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
+    e.target.value = "";
   };
 
   const clearImage = () => {
@@ -624,16 +625,15 @@ export default function App() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={onDrop}
-                onClick={() => { if (!image) fileInputRef.current?.click(); }}
               >
                 {!image && (
-                  <div
-                    className={`absolute inset-3 sm:inset-4 rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-3 p-4 ${
+                  <label
+                    htmlFor="mobile-file-input"
+                    className={`absolute inset-3 sm:inset-4 rounded-2xl border-2 border-dashed transition-colors flex flex-col items-center justify-center gap-3 p-4 cursor-pointer ${
                       isDragging
                         ? "border-[#2779a7] bg-accent/40"
                         : "border-[#49c5b6] bg-accent/20"
                     }`}
-                    onClick={() => fileInputRef.current?.click()}
                   >
                     <div
                       className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center"
@@ -646,10 +646,11 @@ export default function App() {
                       <span className="text-[#49c5b6]">{t("clickToBrowse")}</span>
                     </p>
                     <p className="text-xs text-muted-foreground text-center">{t("anySize")}</p>
-                  </div>
+                  </label>
                 )}
                 <input
                   ref={fileInputRef}
+                  id="mobile-file-input"
                   type="file"
                   accept="image/*"
                   className="hidden"
