@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://screenstyler.vercel.app/sitemap.xml
+Sitemap: https://screenedit.online/sitemap.xml
 

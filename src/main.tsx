@@ -16,7 +16,7 @@ script.textContent = JSON.stringify({
   "operatingSystem": "Web",
   "inLanguage": ["ru", "en"],
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "url": "https://screenstyler.vercel.app/",
+  "url": "https://screenedit.online/",
 });
 document.head.appendChild(script);
 

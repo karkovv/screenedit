@@ -2,7 +2,7 @@
 
 Style your screenshots in seconds. Upload an image, add a background (solid/gradient/transparent), rounded corners, shadow — then download PNG or copy to clipboard.
 
-**→ https://screenstyler.vercel.app**
+**→ https://screenedit.online**
 
 ## Features
 
