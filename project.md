@@ -1,4 +1,4 @@
-# ScreenStyler
+# ScreenEdit
 
 ## Что это
 Веб-приложение для стилизации скриншотов: загрузка → наложение фона, скруглений, тени → экспорт PNG/JPEG/WebP.
@@ -16,7 +16,7 @@
 
 ## Структура
 ```
-ScreenStyler web app/
+ScreenEdit web app/
 ├── heart-icon.svg           — иконка для кнопки доната
 ├── index.html               — favicon: /logo.svg, dark class + CSP meta
 ├── logo.svg                 — логотип проекта

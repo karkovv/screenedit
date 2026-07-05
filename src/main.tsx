@@ -10,10 +10,11 @@ script.type = "application/ld+json";
 script.textContent = JSON.stringify({
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "ScreenStyler",
+  "name": "ScreenEdit",
   "description": "Бесплатный онлайн-редактор для стилизации скриншотов и изображений. Обрезка, фон, градиенты, тени, скругления. Без рекламы и регистрации.",
   "applicationCategory": "DesignApplication",
   "operatingSystem": "Web",
+  "inLanguage": ["ru", "en"],
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "url": "https://screenstyler.vercel.app/",
 });

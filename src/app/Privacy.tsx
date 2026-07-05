@@ -9,7 +9,7 @@ export default function Privacy() {
     en: {
       title: "Privacy Policy",
       lastUpdated: "Last updated: July 2026",
-      summary: "ScreenStyler is a fully client-side tool. Nothing leaves your browser except standard web requests described below.",
+      summary: "ScreenEdit is a fully client-side tool. Nothing leaves your browser except standard web requests described below.",
       sections: [
         {
           title: "1. What we process",
@@ -53,7 +53,7 @@ export default function Privacy() {
     ru: {
       title: "Политика конфиденциальности",
       lastUpdated: "Обновлено: июль 2026",
-      summary: "ScreenStyler — полностью клиентский инструмент. Никакие данные не покидают ваш браузер, кроме стандартных запросов, описанных ниже.",
+      summary: "ScreenEdit — полностью клиентский инструмент. Никакие данные не покидают ваш браузер, кроме стандартных запросов, описанных ниже.",
       sections: [
         {
           title: "1. Что мы обрабатываем",

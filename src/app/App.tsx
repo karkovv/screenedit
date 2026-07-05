@@ -481,12 +481,12 @@ export default function App() {
         <div className="flex items-center gap-2.5">
           <div
             className="w-10 h-10 flex items-center justify-center shrink-0"
-            title="ScreenStyler"
+            title="ScreenEdit"
           >
-            <img src="/logo.svg" alt="ScreenStyler" className="w-7 h-7" />
+            <img src="/logo.svg" alt="ScreenEdit" className="w-7 h-7" />
           </div>
           <span className="font-bold text-base tracking-tight select-none">
-            ScreenStyler
+            ScreenEdit
           </span>
         </div>
         <div className="flex items-center gap-1.5">

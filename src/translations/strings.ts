@@ -4,7 +4,7 @@ export type StringKey = keyof typeof strings;
 
 export const strings = {
   // Header
-  appTitle: { en: "ScreenStyler", ru: "ScreenStyler" },
+  appTitle: { en: "ScreenEdit", ru: "ScreenEdit" },
   toggleDark: { en: "Toggle dark mode", ru: "Переключить тему" },
   lightMode: { en: "Light mode", ru: "Светлая тема" },
   darkMode: { en: "Dark mode", ru: "Тёмная тема" },
@@ -55,12 +55,12 @@ export const strings = {
   copied: { en: "Copied!", ru: "Скопировано!" },
 
   // Footer
-  footerPrivacy: { en: "ScreenStyler runs entirely in your browser. We don't store, upload, or share your images.", ru: "ScreenStyler работает полностью в вашем браузере. Мы не храним, не загружаем и не передаём ваши изображения." },
+  footerPrivacy: { en: "ScreenEdit runs entirely in your browser. We don't store, upload, or share your images.", ru: "ScreenEdit работает полностью в вашем браузере. Мы не храним, не загружаем и не передаём ваши изображения." },
 
   // Donation
   donate: { en: "Donate", ru: "Донат" },
   donateTitle: { en: "Support the project", ru: "Поддержать проект" },
-  donateText: { en: "ScreenStyler is completely free and ad-free. If you like it and find it useful in your work, you can support me with a donation for tea :)", ru: "ScreenStyler полностью бесплатный и без рекламы. Если он вам нравится и полезен в работе, вы можете поддержать меня донатом на чай :)" },
+  donateText: { en: "ScreenEdit is completely free and ad-free. If you like it and find it useful in your work, you can support me with a donation for tea :)", ru: "ScreenEdit полностью бесплатный и без рекламы. Если он вам нравится и полезен в работе, вы можете поддержать меня донатом на чай :)" },
   donateLink: { en: "Open DonationAlerts", ru: "Открыть DonationAlerts" },
   close: { en: "Close", ru: "Закрыть" },
 };
