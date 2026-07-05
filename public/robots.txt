@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://screenshot-styler-om02avirt-karkov.vercel.app/sitemap.xml
+
