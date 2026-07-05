@@ -21,10 +21,16 @@
 ScreenEdit web app/
 ├── heart-icon.svg           — иконка для кнопки доната
 ├── index.html               — SEO-метатеги (OG/Twitter/hreflang), CSP, favicon
-├── logo.svg                 — логотип проекта
+├── logo.svg                 — логотип проекта (230×42, иконка + текст)
+├── favicon.png              — PNG фавикон (54×54)
+├── fav.svg                  — SVG фавикон (512×512)
 ├── vercel.json              — сборка, реврайты SPA
 ├── public/
-│   ├── favicon.ico          — копия logo.svg
+│   ├── favicon.ico          — старый .ico
+│   ├── favicon.svg          — копия fav.svg
+│   ├── favicon.png          — копия favicon.png
+│   ├── fav.png              — копия fav.png
+│   ├── fav.svg              — копия fav.svg
 │   ├── logo.svg             — копия для статики
 │   ├── og-img.png           — OG-изображение 137KB
 │   ├── qr-donate-donationalers.png — QR для донатов
@@ -43,6 +49,7 @@ ScreenEdit web app/
 │   │   └── fonts.css        — Inter Google Fonts
 │   └── app/
 │       ├── App.tsx          — основной UI (все контролы + превью, mobile/desktop лейауты)
+│       ├── Logo.tsx         — React-компонент SVG логотипа (inline, currentColor)
 │       ├── useMediaQuery.ts — хук для определения ширины экрана
 │       └── Privacy.tsx      — страница политики конфиденциальности
 ```
@@ -64,6 +71,7 @@ ScreenEdit web app/
 
 ## Основные фичи
 - Drag & drop / click / **Ctrl+V** загрузка изображения (лимит 50MB)
+- Drag & drop на область превью (десктоп) — визуальный оверлей при перетаскивании
 - **Кроп изображения**: react-image-crop + превью в 0.5x scale для попадания в область
 - **Undo/Redo** — для кропа, удаления и сброса настроек (Ctrl+Z / Ctrl+Shift+Z)
 - Настройка фона: Solid / Gradient / None (прозрачный)
@@ -71,11 +79,13 @@ ScreenEdit web app/
   - Визуальный индикатор угла (круг с вращающейся линией)
   - Плавное появление/скрытие через AnimatePresence
 - Размер Canvas: W × H (дефолт 1920×1080), настраиваемые числовые поля
-- Padding — отступ изображения от краёв фона
+- **Image Size** — слайдер 10–100%: масштаб изображения относительно холста (дефолт 75%)
+- **Положение изображения**: визуальная сетка 3×3 с 9 пресетами (центр, углы, края)
 - Border Radius — отдельно для фона (Bg) и изображения (Image), до 100px
 - Тень: **чекбокс вкл/выкл**, Offset X/Y, Blur, Spread, Opacity, Color
-- **Кастомный Sketch-пикер цвета** — для всех 4 цветовых полей (bgColor, gradientFrom, gradientTo, shadow)
+- **Кастомный Sketch-пикер цвета** — для цветовых полей (bgColor, gradientFrom, gradientTo, shadow)
   - Popover с spring-анимацией, teal border, backdrop
+  - **Preset-сваты** (14 цветов) для bgColor и shadow — быстрый выбор без открытия пикера
 - **Кнопки сброса** для каждой настройки (стрелка возврата к дефолту)
 - **Переключатель языка**: EN / RU (через хедер), сохраняется в стейте
 - **Удаление скрина**: кнопка X в зоне загрузки
@@ -83,24 +93,29 @@ ScreenEdit web app/
 - **Privacy page**: отдельная страница /privacy (GDPR, Google Fonts, Vercel)
 - Сброс всех настроек в дефолт
 - Тёмная тема по умолчанию (`<html class="dark">`), переключается через хедер
+- Логотип: инлайновый SVG компонент, текст адаптируется к теме (currentColor)
 - **Экспорт**: Download с выбором PNG / JPEG / WebP, Copy to clipboard
+  - На мобильных: Download на всю ширину, Copy скрыт
 - Canvas рендеринг: clip по borderRadius → фон → shadow → изображение (нет белых углов)
+- **Безопасность canvas**: `Math.max(1, Math.ceil(...))` на все canvas dimensions — предотвращает ошибки drawImage при 0×0
 
 ## Ключевые особенности верстки
 - `h-screen overflow-hidden` на root — страница не скроллится
 - Flex цепочка: root → content → main → row → панели
 - `min-h-0` на каждом flex-ребёнке — разрешает сжатие ниже контента
 - Левая панель (настройки): `overflow-y-auto` — скролл если не влазит
+- Левая панель: `lg:pl-0 lg:pt-0` — на десктопе без левого/верхнего паддинга
 - Правая панель (превью): обе панели stretch на всю высоту
 - Превью в чекерборде (checkerboard)
 - Left/горизонтальный сплит: 25% / 75%
 
 ## Мобильная вёрстка (< 1024px)
 - **Лейаут**: превью сверху (flex-1), панель настроек снизу
+- **Порядок**: контент настройки (scrollable) → таб-бар (снизу)
 - **Таб-бар**: 4 вкладки — Background (Palette), Canvas (Maximize2), Corners (Square), Shadow (Layers)
 - **Анимация табов**: `AnimatePresence mode="wait" initial={false}`, fade + slide 4px, 150ms
 - **Хедер**: компактные иконки, скрытый текст на donate, мелкие кнопки lang/theme
-- **Дропзона**: интегрирована в область превью (dashed border overlay при отсутствии изображения)
+- **Дропзона**: интегрирована в область превью (`<label htmlFor>` для iOS Safari) при отсутствии изображения
 - **Хит-области**: табы ≥ 44px ширины, все кнопки `active:scale-[0.96]`
 - **Высота панели**: `max-h[35vh]`, overflow-y-auto
 - **Адаптив**: `useMediaQuery("(min-width: 1024px)")` хук, условный рендеринг desktop/mobile лейаутов
@@ -124,7 +139,9 @@ ScreenEdit web app/
 - Canvas размер = bgWidth × bgHeight (scale=1, полный размер)
 - Весь контент обрезается по borderRadius фона через `ctx.clip()` — ни пустых углов
 - Градиент поддерживает угол наклона через `getGradientCoords()` (тригонометрия от центра)
+- Позиция изображения: 9 пресетов (центр/углы/края), вычисляется как `(bw - dispW) * fx`
 - Экспорт через `toBlob` с качеством 1.0 для JPEG/WebP
+- Все canvas dimensions защищены `Math.max(1, Math.ceil(...))` — guard от 0×0 при дробных значениях
 
 ## Безопасность
 - **CSP** в index.html: `default-src 'self'`, `script-src 'self'` (без unsafe-inline)
@@ -142,3 +159,4 @@ ScreenEdit web app/
 ## Известные баги / TODO
 - [ ] Нет обработки resize окна для canvas (export всегда полный размер, ок)
 - [ ] Нет английской версии OG-изображения (сейчас только RU)
+- [ ] Copy to clipboard не работает на мобильных (iOS Safari не даёт вставить вне браузера) — скрыт на mobile layout

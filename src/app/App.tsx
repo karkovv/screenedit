@@ -7,6 +7,7 @@ import ReactCrop, { type PixelCrop } from "react-image-crop";
 import "react-image-crop/dist/ReactCrop.css";
 import Sketch from "@uiw/react-color-sketch";
 import { useMediaQuery } from "./useMediaQuery";
+import { Logo } from "./Logo";
 
 import {
   Upload,
@@ -64,6 +65,7 @@ interface StyleSettings {
   shadow: ShadowSettings;
   shadowEnabled: boolean;
   imageSize: number;
+  position: "center" | "top-left" | "top" | "top-right" | "left" | "right" | "bottom-left" | "bottom" | "bottom-right";
 }
 
 interface Snapshot {
@@ -84,6 +86,7 @@ const DEFAULT_SETTINGS: StyleSettings = {
   shadow: { x: 0, y: 8, blur: 32, spread: 0, color: "#000000", opacity: 20 },
   shadowEnabled: true,
   imageSize: 75,
+  position: "center",
 };
 
 function hexToRgb(hex: string) {
@@ -106,6 +109,21 @@ function getGradientCoords(bw: number, bh: number, angleDeg: number) {
   };
 }
 
+function getPosition(pos: StyleSettings["position"]): { fx: number; fy: number } {
+  const map: Record<string, { fx: number; fy: number }> = {
+    "top-left": { fx: 0, fy: 0 },
+    "top": { fx: 0.5, fy: 0 },
+    "top-right": { fx: 1, fy: 0 },
+    "left": { fx: 0, fy: 0.5 },
+    "center": { fx: 0.5, fy: 0.5 },
+    "right": { fx: 1, fy: 0.5 },
+    "bottom-left": { fx: 0, fy: 1 },
+    "bottom": { fx: 0.5, fy: 1 },
+    "bottom-right": { fx: 1, fy: 1 },
+  };
+  return map[pos];
+}
+
 export default function App() {
   const { dark, toggle: toggleTheme } = useTheme();
   const { lang, toggle: toggleLang, t } = useLang();
@@ -124,6 +142,10 @@ export default function App() {
   const [completedCrop, setCompletedCrop] = useState<PixelCrop | undefined>(undefined);
   const [cropPreviewSrc, setCropPreviewSrc] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const imageRef = useRef<string | null>(null);
+  const settingsRef = useRef<StyleSettings>(DEFAULT_SETTINGS);
+  imageRef.current = image;
+  settingsRef.current = settings;
   const undoStack = useRef<Snapshot[]>([]);
   const redoStack = useRef<Snapshot[]>([]);
   const saveState = () => {
@@ -203,8 +225,11 @@ export default function App() {
       const availH = bh * sizeFactor;
       const fit = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
       const c = document.createElement("canvas");
-      c.width = img.naturalWidth * fit;
-      c.height = img.naturalHeight * fit;
+      const cw = img.naturalWidth * fit;
+      const ch = img.naturalHeight * fit;
+      if (!(cw > 0) || !(ch > 0)) return;
+      c.width = Math.max(1, Math.ceil(cw));
+      c.height = Math.max(1, Math.ceil(ch));
       const ctx = c.getContext("2d")!;
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
@@ -229,14 +254,15 @@ export default function App() {
         const fitScale = Math.min(availW / bitmap.width, availH / bitmap.height);
         const dispW = bitmap.width * fitScale;
         const dispH = bitmap.height * fitScale;
-        const ox = (bw - dispW) / 2;
-        const oy = (bh - dispH) / 2;
+        const { fx, fy } = getPosition(settings.position);
+        const ox = (bw - dispW) * fx;
+        const oy = (bh - dispH) * fy;
         const r = settings.borderRadius * scale;
         const imgR = settings.imageBorderRadius * scale;
         const ctx = canvas.getContext("2d")!;
         if (canvas.width !== bw || canvas.height !== bh) {
-          canvas.width = bw;
-          canvas.height = bh;
+          canvas.width = Math.max(1, Math.ceil(bw));
+          canvas.height = Math.max(1, Math.ceil(bh));
         } else {
           ctx.clearRect(0, 0, bw, bh);
         }
@@ -261,8 +287,8 @@ export default function App() {
 
         let temp = tempCanvasRef.current ?? (tempCanvasRef.current = document.createElement("canvas"));
         if (temp.width !== dispW || temp.height !== dispH) {
-          temp.width = dispW;
-          temp.height = dispH;
+          temp.width = Math.max(1, Math.ceil(dispW));
+          temp.height = Math.max(1, Math.ceil(dispH));
         }
         const tctx = temp.getContext("2d")!;
         tctx.drawImage(bitmap, 0, 0, dispW, dispH);
@@ -338,7 +364,7 @@ export default function App() {
   const handleUndo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
-    redoStack.current.push({ image: image, settings: settings });
+    redoStack.current.push({ image: imageRef.current, settings: settingsRef.current });
     setImage(prev.image);
     setSettings(prev.settings);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -347,7 +373,7 @@ export default function App() {
   const handleRedo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push({ image: image, settings: settings });
+    undoStack.current.push({ image: imageRef.current, settings: settingsRef.current });
     setImage(next.image);
     setSettings(next.settings);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -480,17 +506,7 @@ export default function App() {
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-3 md:px-5 py-2 md:py-3 border-b border-border bg-card shrink-0">
-        <div className="flex items-center gap-2 md:gap-2.5">
-          <div
-            className="w-8 h-8 md:w-10 md:h-10 flex items-center justify-center shrink-0"
-            title="ScreenEdit"
-          >
-            <img src="/logo.svg" alt="ScreenEdit" className="w-6 h-6 md:w-7 md:h-7" />
-          </div>
-          <span className="font-bold text-sm md:text-base tracking-tight select-none">
-            ScreenEdit
-          </span>
-        </div>
+        <Logo className="h-4 md:h-5 w-auto select-none text-foreground" />
         <div className="flex items-center gap-1 md:gap-1.5">
           <button
             onClick={() => setDonationOpen(true)}
@@ -751,7 +767,7 @@ export default function App() {
           <div className="flex flex-col lg:flex-row gap-6 h-full max-h-full min-h-0">
             {/* LEFT PANEL */}
             <div
-              className="w-full lg:w-[25%] bg-card rounded-2xl flex flex-col gap-6 p-6 min-h-0 overflow-y-auto"
+              className="w-full lg:w-[25%] bg-card rounded-2xl flex flex-col gap-6 p-6 lg:pl-0 lg:pt-0 min-h-0 overflow-y-auto"
               style={{
                 boxShadow:
                   "0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.05)",
@@ -950,6 +966,9 @@ export default function App() {
                     ? "repeating-conic-gradient(#3a3a3a 0% 25%, #505050 0% 50%) 0 0 / 20px 20px"
                     : "repeating-conic-gradient(#E5E7EB 0% 25%, #FFFFFF 0% 50%) 0 0 / 20px 20px",
                 }}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={onDrop}
               >
                 {cropMode && cropPreviewSrc ? (
                   <div className="absolute inset-[32px] grid place-items-center" style={{ gridTemplateRows: "1fr", gridTemplateColumns: "1fr" }}>
@@ -981,6 +1000,9 @@ export default function App() {
                   />
                 ) : (
                   <EmptyState />
+                )}
+                {isDragging && (
+                  <div className="absolute inset-0 z-10 bg-accent/40 border-2 border-dashed border-[#2779a7] rounded-2xl m-8 pointer-events-none" />
                 )}
               </div>
 
@@ -1283,7 +1305,7 @@ function StyledSlider({
         min={min}
         max={max}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(Number(e.currentTarget.value))}
         className="relative w-full appearance-none bg-transparent cursor-pointer"
         style={{ WebkitAppearance: "none" } as React.CSSProperties}
       />
@@ -1365,7 +1387,7 @@ function ColorPickerSketch({
   return (
     <div className="relative">
       {presets && (
-        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+        <div className="flex items-center gap-1.5 flex-wrap mb-2 pl-1">
           {presets.map((preset) => (
             <button
               key={preset}
@@ -1542,6 +1564,36 @@ function BackgroundSettings({
   );
 }
 
+function PositionGrid({
+  position,
+  onChange,
+}: {
+  position: StyleSettings["position"];
+  onChange: (p: StyleSettings["position"]) => void;
+}) {
+  const positions: StyleSettings["position"][] = [
+    "top-left", "top", "top-right",
+    "left", "center", "right",
+    "bottom-left", "bottom", "bottom-right",
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-1.5 w-fit">
+      {positions.map((p) => (
+        <button
+          key={p}
+          onClick={() => onChange(p)}
+          title={p}
+          className={`w-7 h-7 rounded-md border transition-all duration-150 active:scale-[0.96] cursor-pointer ${
+            p === position
+              ? "bg-[#49c5b6] border-[#49c5b6] shadow-sm"
+              : "bg-muted border-border hover:border-[#49c5b6]/50 hover:bg-muted-foreground/10"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 function LayoutSettings({
   settings,
   update,
@@ -1562,8 +1614,8 @@ function LayoutSettings({
               min={200}
               max={7680}
               step={10}
-              value={settings.bgWidth}
-              onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) update({ bgWidth: v }); }}
+               value={settings.bgWidth || ""}
+              onChange={(e) => { if (e.target.value === "") { update({ bgWidth: 0 }); return; } const v = Number(e.target.value); if (!isNaN(v)) update({ bgWidth: v }); }}
               onBlur={() => update({ bgWidth: Math.max(200, Math.min(7680, settings.bgWidth)) })}
               className="w-18 h-8 rounded-md border border-border bg-background px-1 text-base text-foreground font-mono text-center tabular-nums"
             />
@@ -1576,8 +1628,8 @@ function LayoutSettings({
               min={200}
               max={4320}
               step={10}
-              value={settings.bgHeight}
-              onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) update({ bgHeight: v }); }}
+               value={settings.bgHeight || ""}
+              onChange={(e) => { if (e.target.value === "") { update({ bgHeight: 0 }); return; } const v = Number(e.target.value); if (!isNaN(v)) update({ bgHeight: v }); }}
               onBlur={() => update({ bgHeight: Math.max(200, Math.min(4320, settings.bgHeight)) })}
               className="w-18 h-8 rounded-md border border-border bg-background px-1 text-base text-foreground font-mono text-center tabular-nums"
             />
@@ -1586,6 +1638,11 @@ function LayoutSettings({
       </ControlRow>
       <ControlRow label={`${t("imageSize")} — ${settings.imageSize}%`} onReset={() => update({ imageSize: DEFAULT_SETTINGS.imageSize })}>
         <StyledSlider min={10} max={100} value={settings.imageSize} onChange={(v) => update({ imageSize: v })} />
+      </ControlRow>
+      <ControlRow label="Положение" labelClassName="mb-1" onReset={() => update({ position: DEFAULT_SETTINGS.position })}>
+        <div className="flex flex-col items-center">
+          <PositionGrid position={settings.position} onChange={(p) => update({ position: p })} />
+        </div>
       </ControlRow>
     </div>
   );
