@@ -131,6 +131,7 @@ export default function App() {
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const imageBitmapRef = useRef<ImageBitmap | null>(null);
   const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [bitmapVersion, setBitmapVersion] = useState(0);
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({
     background: true,
     layout: true,
@@ -157,7 +158,7 @@ export default function App() {
       setPreviewUrl(c.toDataURL("image/png"));
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [image, settings]);
+  }, [image, settings, bitmapVersion]);
 
   // Pre-decode image to ImageBitmap for zero-decode re-renders
   useEffect(() => {
@@ -172,7 +173,10 @@ export default function App() {
       if (cancelled) return;
       imageBitmapRef.current?.close();
       createImageBitmap(img).then((bm) => {
-        if (!cancelled) imageBitmapRef.current = bm;
+        if (!cancelled) {
+          imageBitmapRef.current = bm;
+          setBitmapVersion(v => v + 1);
+        }
       });
     };
     img.src = image;
