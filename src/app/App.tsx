@@ -1502,7 +1502,7 @@ function BackgroundSettings({
                         const v = Number(e.target.value);
                         if (!isNaN(v)) update({ gradientAngle: Math.max(0, Math.min(360, v)) });
                       }}
-                      className="w-14 h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground font-mono text-center tabular-nums"
+                      className="w-14 h-8 rounded-md border border-border bg-background px-1 text-base text-foreground font-mono text-center tabular-nums"
                     />
                     <span className="text-xs text-muted-foreground font-mono">°</span>
                   </label>
@@ -1543,7 +1543,7 @@ function LayoutSettings({
               value={settings.bgWidth}
               onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) update({ bgWidth: v }); }}
               onBlur={() => update({ bgWidth: Math.max(200, Math.min(7680, settings.bgWidth)) })}
-              className="w-18 h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground font-mono text-center tabular-nums"
+              className="w-18 h-8 rounded-md border border-border bg-background px-1 text-base text-foreground font-mono text-center tabular-nums"
             />
           </label>
           <span className="text-xs text-muted-foreground/50">×</span>
@@ -1557,7 +1557,7 @@ function LayoutSettings({
               value={settings.bgHeight}
               onChange={(e) => { const v = Number(e.target.value); if (!isNaN(v)) update({ bgHeight: v }); }}
               onBlur={() => update({ bgHeight: Math.max(200, Math.min(4320, settings.bgHeight)) })}
-              className="w-18 h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground font-mono text-center tabular-nums"
+              className="w-18 h-8 rounded-md border border-border bg-background px-1 text-base text-foreground font-mono text-center tabular-nums"
             />
           </label>
         </div>
