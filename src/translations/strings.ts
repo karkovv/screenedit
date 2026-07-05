@@ -28,6 +28,7 @@ export const strings = {
   paddingVertical: { en: "Top / Bottom", ru: "Сверху / Снизу" },
   paddingHorizontal: { en: "Left / Right", ru: "Слева / Справа" },
   canvasSize: { en: "Canvas Size", ru: "Размер холста" },
+  imageSize: { en: "Image Size", ru: "Размер" },
   bgRadius: { en: "Bg Radius", ru: "Радиус фона" },
   imageRadius: { en: "Image Radius", ru: "Радиус изображения" },
   layout: { en: "Canvas Settings", ru: "Настройки Canvas" },

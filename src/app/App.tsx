@@ -17,8 +17,6 @@ import {
   Sun,
   Moon,
   X,
-  Lock,
-  LockOpen,
   ChevronDown,
   Crop,
   Check,
@@ -65,9 +63,7 @@ interface StyleSettings {
   imageBorderRadius: number;
   shadow: ShadowSettings;
   shadowEnabled: boolean;
-  paddingY: number;
-  paddingX: number;
-  paddingLocked: boolean;
+  imageSize: number;
 }
 
 interface Snapshot {
@@ -87,9 +83,7 @@ const DEFAULT_SETTINGS: StyleSettings = {
   imageBorderRadius: 0,
   shadow: { x: 0, y: 8, blur: 32, spread: 0, color: "#000000", opacity: 20 },
   shadowEnabled: true,
-  paddingY: 32,
-  paddingX: 32,
-  paddingLocked: true,
+  imageSize: 75,
 };
 
 function hexToRgb(hex: string) {
@@ -202,12 +196,11 @@ export default function App() {
     const img = new window.Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const padX = settings.paddingX * 0.5;
-      const padY = settings.paddingY * 0.5;
+      const sizeFactor = settings.imageSize / 100;
       const bw = settings.bgWidth * 0.5;
       const bh = settings.bgHeight * 0.5;
-      const availW = bw - padX * 2;
-      const availH = bh - padY * 2;
+      const availW = bw * sizeFactor;
+      const availH = bh * sizeFactor;
       const fit = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
       const c = document.createElement("canvas");
       c.width = img.naturalWidth * fit;
@@ -228,17 +221,16 @@ export default function App() {
         if (!image || !imageBitmapRef.current) { resolve(); return; }
         const bitmap = imageBitmapRef.current;
         const sw = settings.shadow;
-        const padY = settings.paddingY * scale;
-        const padX = settings.paddingX * scale;
+        const sizeFactor = settings.imageSize / 100;
         const bw = settings.bgWidth * scale;
         const bh = settings.bgHeight * scale;
-        const availW = bw - padX * 2;
-        const availH = bh - padY * 2;
+        const availW = bw * sizeFactor;
+        const availH = bh * sizeFactor;
         const fitScale = Math.min(availW / bitmap.width, availH / bitmap.height);
         const dispW = bitmap.width * fitScale;
         const dispH = bitmap.height * fitScale;
-        const ox = padX + (availW - dispW) / 2;
-        const oy = padY + (availH - dispH) / 2;
+        const ox = (bw - dispW) / 2;
+        const oy = (bh - dispH) / 2;
         const r = settings.borderRadius * scale;
         const imgR = settings.imageBorderRadius * scale;
         const ctx = canvas.getContext("2d")!;
@@ -413,8 +405,13 @@ export default function App() {
       const link = document.createElement("a");
       link.download = `styled-screenshot.${ext}`;
       link.href = URL.createObjectURL(blob);
+      link.style.display = "none";
+      document.body.appendChild(link);
       link.click();
-      URL.revokeObjectURL(link.href);
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+      }, 100);
     }, mimeType, 1);
     setDownloadOpen(false);
   }, [renderToCanvas]);
@@ -439,10 +436,6 @@ export default function App() {
     setSettings((s) => ({ ...s, ...patch }));
   const updateShadow = (patch: Partial<ShadowSettings>) =>
     setSettings((s) => ({ ...s, shadow: { ...s.shadow, ...patch } }));
-  const setPaddingY = (v: number) =>
-    setSettings((s) => s.paddingLocked ? { ...s, paddingY: v, paddingX: v } : { ...s, paddingY: v });
-  const setPaddingX = (v: number) =>
-    setSettings((s) => s.paddingLocked ? { ...s, paddingX: v, paddingY: v } : { ...s, paddingX: v });
 
   const handleReset = () => {
     saveState();
@@ -699,7 +692,7 @@ export default function App() {
                 {downloadOpen && (
                   <div className="fixed inset-0 z-40" onClick={() => setDownloadOpen(false)} />
                 )}
-                <div className="relative">
+                <div className="relative z-50">
                   <button
                     onClick={() => setDownloadOpen((v) => !v)}
                     disabled={!image}
@@ -749,8 +742,6 @@ export default function App() {
               settings={settings}
               update={update}
               updateShadow={updateShadow}
-              setPaddingY={setPaddingY}
-              setPaddingX={setPaddingX}
               t={t}
               handleReset={handleReset}
             />
@@ -855,7 +846,7 @@ export default function App() {
                   isOpen={sectionsOpen.layout}
                   onToggle={toggleSection}
                 >
-                <LayoutSettings settings={settings} update={update} setPaddingY={setPaddingY} setPaddingX={setPaddingX} t={t} />
+                <LayoutSettings settings={settings} update={update} t={t} />
                 </CollapsibleSection>
 
                 <SettingsDivider />
@@ -1349,22 +1340,53 @@ function GradientAngleIndicator({ angle }: { angle: number }) {
   );
 }
 
+const PRESET_COLORS = [
+  "#FFFFFF", "#F3F4F6", "#9CA3AF", "#4B5563", "#111111",
+  "#EF4444", "#F97316", "#EAB308", "#22C55E", "#49C5B6",
+  "#2779A7", "#3B82F6", "#8B5CF6", "#EC4899",
+];
+
 function ColorPickerSketch({
   color,
   onChange,
   children,
   offsetY = 0,
+  presets,
 }: {
   color: string;
   onChange: (c: string) => void;
   children: React.ReactNode;
   offsetY?: number;
+  presets?: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ left: 0, top: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
   return (
     <div className="relative">
+      {presets && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          {presets.map((preset) => (
+            <button
+              key={preset}
+              onClick={(e) => { e.stopPropagation(); onChange(preset); }}
+              className={`w-6 h-6 rounded-full border border-border cursor-pointer transition-all duration-150 active:scale-[0.96] shrink-0 ${
+                color.toLowerCase() === preset.toLowerCase()
+                  ? "ring-2 ring-[#49c5b6] scale-110"
+                  : "hover:scale-110"
+              }`}
+              style={{ background: preset }}
+            />
+          ))}
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+            className="w-6 h-6 rounded-full border border-border bg-muted flex items-center justify-center cursor-pointer hover:bg-muted-foreground/20 active:scale-[0.96] transition-all duration-150 shrink-0"
+            title="Custom color"
+          >
+            <Palette className="w-3 h-3 text-muted-foreground" />
+          </button>
+        </div>
+      )}
       <div
         ref={triggerRef}
         onClick={() => {
@@ -1401,6 +1423,10 @@ function ColorPickerSketch({
               color={color}
               onChange={(c) => onChange(c.hex)}
               disableAlpha
+              presetColors={presets ?? [
+                "#D0021B", "#F5A623", "#f8e61b", "#8B572A", "#7ED321",
+                "#417505", "#BD10E0", "#9013FE", "#4A90E2", "#50E3C2",
+              ]}
               style={{ boxShadow: "0 0 0 2px rgba(73,197,182,0.3), 0 4px 24px rgba(0,0,0,0.15)" }}
             />
           </motion.div>
@@ -1449,7 +1475,7 @@ function BackgroundSettings({
             exit={{ opacity: 0, height: 0 }}
             transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
           >
-            <ColorPickerSketch color={settings.bgColor} onChange={(c) => update({ bgColor: c })}>
+            <ColorPickerSketch color={settings.bgColor} onChange={(c) => update({ bgColor: c })} presets={PRESET_COLORS}>
               <span className="inline-flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-background hover:bg-muted shadow-sm cursor-pointer transition-colors duration-150">
                 <span className="w-4 h-4 rounded-sm shrink-0" style={{ background: settings.bgColor }} />
                 <span className="text-xs font-mono tabular-nums text-muted-foreground">{settings.bgColor}</span>
@@ -1519,14 +1545,10 @@ function BackgroundSettings({
 function LayoutSettings({
   settings,
   update,
-  setPaddingY,
-  setPaddingX,
   t,
 }: {
   settings: StyleSettings;
   update: (patch: Partial<StyleSettings>) => void;
-  setPaddingY: (v: number) => void;
-  setPaddingX: (v: number) => void;
   t: (key: StringKey) => string;
 }) {
   return (
@@ -1562,26 +1584,8 @@ function LayoutSettings({
           </label>
         </div>
       </ControlRow>
-      <div className="flex items-center gap-2">
-        <p className="text-xs font-semibold text-muted-foreground">{t("padding")}</p>
-        <button
-          onClick={() => update({ paddingLocked: !settings.paddingLocked })}
-          className={`w-7 h-7 flex items-center justify-center rounded-md transition-all duration-150 active:scale-[0.96] cursor-pointer ${
-            settings.paddingLocked
-            ? "bg-[#49c5b6] text-white shadow-sm"
-            : "text-muted-foreground/40 hover:text-foreground bg-muted hover:bg-muted"
-          }`}
-          title={settings.paddingLocked ? "Unlink padding values" : "Link padding values"}
-          style={settings.paddingLocked ? { boxShadow: "0 1px 4px rgba(73,197,182,0.35)" } : undefined}
-        >
-          {settings.paddingLocked ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
-        </button>
-      </div>
-      <ControlRow label={`↕ ${t("paddingVertical")} — ${settings.paddingY}px`} onReset={() => setPaddingY(DEFAULT_SETTINGS.paddingY)}>
-        <StyledSlider min={0} max={80} value={settings.paddingY} onChange={setPaddingY} />
-      </ControlRow>
-      <ControlRow label={`↔ ${t("paddingHorizontal")} — ${settings.paddingX}px`} onReset={() => setPaddingX(DEFAULT_SETTINGS.paddingX)}>
-        <StyledSlider min={0} max={80} value={settings.paddingX} onChange={setPaddingX} />
+      <ControlRow label={`${t("imageSize")} — ${settings.imageSize}%`} onReset={() => update({ imageSize: DEFAULT_SETTINGS.imageSize })}>
+        <StyledSlider min={10} max={100} value={settings.imageSize} onChange={(v) => update({ imageSize: v })} />
       </ControlRow>
     </div>
   );
@@ -1657,7 +1661,7 @@ function ShadowSettings({
           </ControlRow>
           <ControlRow label={t("color")} onReset={() => updateShadow({ color: DEFAULT_SETTINGS.shadow.color })}>
             <label className="flex items-center gap-1.5 cursor-pointer">
-              <ColorPickerSketch color={settings.shadow.color} onChange={(c) => updateShadow({ color: c })} offsetY={55}>
+              <ColorPickerSketch color={settings.shadow.color} onChange={(c) => updateShadow({ color: c })} offsetY={55} presets={PRESET_COLORS}>
                 <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer">
                   <span className="w-5 h-5 rounded-sm" style={{ background: settings.shadow.color }} />
                 </span>
@@ -1688,8 +1692,6 @@ function MobileSettingsPanel({
   settings,
   update,
   updateShadow,
-  setPaddingY,
-  setPaddingX,
   t,
   handleReset,
 }: {
@@ -1698,8 +1700,6 @@ function MobileSettingsPanel({
   settings: StyleSettings;
   update: (patch: Partial<StyleSettings>) => void;
   updateShadow: (patch: Partial<ShadowSettings>) => void;
-  setPaddingY: (v: number) => void;
-  setPaddingX: (v: number) => void;
   t: (key: StringKey) => string;
   handleReset: () => void;
 }) {
@@ -1721,7 +1721,7 @@ function MobileSettingsPanel({
               <BackgroundSettings settings={settings} update={update} t={t} />
             )}
             {activeTab === "canvas" && (
-              <LayoutSettings settings={settings} update={update} setPaddingY={setPaddingY} setPaddingX={setPaddingX} t={t} />
+              <LayoutSettings settings={settings} update={update} t={t} />
             )}
             {activeTab === "corners" && (
               <CornersSettings settings={settings} update={update} t={t} />
