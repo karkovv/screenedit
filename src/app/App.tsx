@@ -2,6 +2,10 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { Link } from "react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { useLang } from "../translations/LangProvider";
+import ReactCrop, { type PixelCrop } from "react-image-crop";
+import "react-image-crop/dist/ReactCrop.css";
+import Sketch from "@uiw/react-color-sketch";
+
 import {
   Upload,
   Download,
@@ -11,13 +15,18 @@ import {
   Sun,
   Moon,
   X,
+  Lock,
+  LockOpen,
+  ChevronDown,
+  Crop,
+  Check,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 
 function useTheme() {
   const [dark, setDark] = useState(() => {
-    const hasClass = document.documentElement.classList.contains("dark");
-    if (!hasClass) document.documentElement.classList.add("dark");
-    return true;
+    return document.documentElement.classList.contains("dark");
   });
   const toggle = () => {
     setDark((d) => {
@@ -49,7 +58,15 @@ interface StyleSettings {
   borderRadius: number;
   imageBorderRadius: number;
   shadow: ShadowSettings;
-  padding: number;
+  shadowEnabled: boolean;
+  paddingY: number;
+  paddingX: number;
+  paddingLocked: boolean;
+}
+
+interface Snapshot {
+  image: string | null;
+  settings: StyleSettings;
 }
 
 const DEFAULT_SETTINGS: StyleSettings = {
@@ -63,7 +80,10 @@ const DEFAULT_SETTINGS: StyleSettings = {
   borderRadius: 16,
   imageBorderRadius: 0,
   shadow: { x: 0, y: 8, blur: 32, spread: 0, color: "#000000", opacity: 20 },
-  padding: 32,
+  shadowEnabled: true,
+  paddingY: 32,
+  paddingX: 32,
+  paddingLocked: true,
 };
 
 function hexToRgb(hex: string) {
@@ -94,6 +114,31 @@ export default function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [copied, setCopied] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [donationOpen, setDonationOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState<"png" | "jpeg" | "webp" | null>(null);
+  const [cropMode, setCropMode] = useState(false);
+  const [crop, setCrop] = useState<import("react-image-crop").Crop | undefined>(undefined);
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | undefined>(undefined);
+  const [cropPreviewSrc, setCropPreviewSrc] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const undoStack = useRef<Snapshot[]>([]);
+  const redoStack = useRef<Snapshot[]>([]);
+  const saveState = () => {
+    undoStack.current.push({ image, settings });
+    redoStack.current = [];
+  };
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const imageBitmapRef = useRef<ImageBitmap | null>(null);
+  const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({
+    background: true,
+    layout: true,
+    corners: true,
+    shadow: true,
+  });
+  const toggleSection = (id: string) =>
+    setSectionsOpen((s) => ({ ...s, [id]: !s[id] }));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -114,82 +159,134 @@ export default function App() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [image, settings]);
 
+  // Pre-decode image to ImageBitmap for zero-decode re-renders
+  useEffect(() => {
+    if (!image) {
+      imageBitmapRef.current?.close();
+      imageBitmapRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    const img = new window.Image();
+    img.onload = () => {
+      if (cancelled) return;
+      imageBitmapRef.current?.close();
+      createImageBitmap(img).then((bm) => {
+        if (!cancelled) imageBitmapRef.current = bm;
+      });
+    };
+    img.src = image;
+    return () => {
+      cancelled = true;
+    };
+  }, [image]);
+
+  // Generate 0.5x image-only preview for crop mode (same scale as styled preview)
+  useEffect(() => {
+    if (!cropMode || !image) {
+      setCropPreviewSrc(null);
+      return;
+    }
+    const img = new window.Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const padX = settings.paddingX * 0.5;
+      const padY = settings.paddingY * 0.5;
+      const bw = settings.bgWidth * 0.5;
+      const bh = settings.bgHeight * 0.5;
+      const availW = bw - padX * 2;
+      const availH = bh - padY * 2;
+      const fit = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth * fit;
+      c.height = img.naturalHeight * fit;
+      const ctx = c.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      setCropPreviewSrc(c.toDataURL("image/png"));
+    };
+    img.src = image;
+  }, [cropMode, image, settings]);
+
   // Render styled image to canvas
   const renderToCanvas = useCallback(
     (canvas: HTMLCanvasElement, scale = 1) => {
       return new Promise<void>((resolve) => {
-        if (!image) { resolve(); return; }
-        const img = new window.Image();
-        img.onerror = () => resolve();
-        img.onload = () => {
-          const sw = settings.shadow;
-          const pad = settings.padding * scale;
-          const bw = settings.bgWidth * scale;
-          const bh = settings.bgHeight * scale;
-          const availW = bw - pad * 2;
-          const availH = bh - pad * 2;
-          const fitScale = Math.min(availW / img.width, availH / img.height);
-          const dispW = img.width * fitScale;
-          const dispH = img.height * fitScale;
-          const ox = pad + (availW - dispW) / 2;
-          const oy = pad + (availH - dispH) / 2;
-          const r = settings.borderRadius * scale;
-          const imgR = settings.imageBorderRadius * scale;
-          const ctx = canvas.getContext("2d")!;
-          if (canvas.width !== bw || canvas.height !== bh) {
-            canvas.width = bw;
-            canvas.height = bh;
-          } else {
-            ctx.clearRect(0, 0, bw, bh);
-          }
+        if (!image || !imageBitmapRef.current) { resolve(); return; }
+        const bitmap = imageBitmapRef.current;
+        const sw = settings.shadow;
+        const padY = settings.paddingY * scale;
+        const padX = settings.paddingX * scale;
+        const bw = settings.bgWidth * scale;
+        const bh = settings.bgHeight * scale;
+        const availW = bw - padX * 2;
+        const availH = bh - padY * 2;
+        const fitScale = Math.min(availW / bitmap.width, availH / bitmap.height);
+        const dispW = bitmap.width * fitScale;
+        const dispH = bitmap.height * fitScale;
+        const ox = padX + (availW - dispW) / 2;
+        const oy = padY + (availH - dispH) / 2;
+        const r = settings.borderRadius * scale;
+        const imgR = settings.imageBorderRadius * scale;
+        const ctx = canvas.getContext("2d")!;
+        if (canvas.width !== bw || canvas.height !== bh) {
+          canvas.width = bw;
+          canvas.height = bh;
+        } else {
+          ctx.clearRect(0, 0, bw, bh);
+        }
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
 
-          // Background fill
+        ctx.save();
+        roundedRect(ctx, 0, 0, bw, bh, r);
+        ctx.clip();
+
+        if (settings.bgType === "gradient") {
+          const { x0, y0, x1, y1 } = getGradientCoords(bw, bh, settings.gradientAngle);
+          const grd = ctx.createLinearGradient(x0, y0, x1, y1);
+          grd.addColorStop(0, settings.gradientFrom);
+          grd.addColorStop(1, settings.gradientTo);
+          ctx.fillStyle = grd;
+          ctx.fillRect(0, 0, bw, bh);
+        } else if (settings.bgType === "solid") {
+          ctx.fillStyle = settings.bgColor;
+          ctx.fillRect(0, 0, bw, bh);
+        }
+
+        let temp = tempCanvasRef.current ?? (tempCanvasRef.current = document.createElement("canvas"));
+        if (temp.width !== dispW || temp.height !== dispH) {
+          temp.width = dispW;
+          temp.height = dispH;
+        }
+        const tctx = temp.getContext("2d")!;
+        tctx.drawImage(bitmap, 0, 0, dispW, dispH);
+        if (imgR > 0) {
+          tctx.save();
+          tctx.globalCompositeOperation = "destination-in";
+          roundedRect(tctx, 0, 0, dispW, dispH, imgR);
+          tctx.fillStyle = "#000000";
+          tctx.fill();
+          tctx.restore();
+        }
+        if (settings.shadowEnabled) {
           ctx.save();
-          roundedRect(ctx, 0, 0, bw, bh, r);
-          if (settings.bgType === "gradient") {
-            const { x0, y0, x1, y1 } = getGradientCoords(bw, bh, settings.gradientAngle);
-            const grd = ctx.createLinearGradient(x0, y0, x1, y1);
-            grd.addColorStop(0, settings.gradientFrom);
-            grd.addColorStop(1, settings.gradientTo);
-            ctx.fillStyle = grd;
-          } else if (settings.bgType === "transparent") {
-            ctx.fillStyle = "rgba(0,0,0,0)";
-          } else {
-            ctx.fillStyle = settings.bgColor;
-          }
-          ctx.fill();
+          ctx.shadowOffsetX = sw.x * scale;
+          ctx.shadowOffsetY = sw.y * scale;
+          ctx.shadowBlur = sw.blur * scale;
+          ctx.shadowColor = (() => {
+            const { r: cr, g: cg, b: cb } = hexToRgb(sw.color);
+            return `rgba(${cr},${cg},${cb},${sw.opacity / 100})`;
+          })();
+          ctx.drawImage(temp, ox, oy);
           ctx.restore();
+        } else {
+          ctx.drawImage(temp, ox, oy);
+        }
 
-          // Shadow + rounded image via temp canvas (no black fill bleeding)
-          {
-            const temp = document.createElement("canvas");
-            temp.width = dispW;
-            temp.height = dispH;
-            const tctx = temp.getContext("2d")!;
-            tctx.drawImage(img, 0, 0, dispW, dispH);
-            if (imgR > 0) {
-              tctx.save();
-              tctx.globalCompositeOperation = "destination-in";
-              roundedRect(tctx, 0, 0, dispW, dispH, imgR);
-              tctx.fillStyle = "#000000";
-              tctx.fill();
-              tctx.restore();
-            }
-            ctx.save();
-            ctx.shadowOffsetX = sw.x * scale;
-            ctx.shadowOffsetY = sw.y * scale;
-            ctx.shadowBlur = sw.blur * scale;
-            ctx.shadowColor = (() => {
-              const { r: cr, g: cg, b: cb } = hexToRgb(sw.color);
-              return `rgba(${cr},${cg},${cb},${sw.opacity / 100})`;
-            })();
-            ctx.drawImage(temp, ox, oy);
-            ctx.restore();
-          }
-
-          resolve();
-        };
-        img.src = image;
+        ctx.restore();
+        resolve();
       });
     },
     [image, settings],
@@ -198,6 +295,10 @@ export default function App() {
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) return;
+    if (file.size > 50 * 1024 * 1024) {
+      alert("File is too large. Maximum size is 50MB.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (e) => setImage(e.target?.result as string);
     reader.readAsDataURL(file);
@@ -217,6 +318,54 @@ export default function App() {
     return () => document.removeEventListener("paste", onPaste);
   }, [handleFile]);
 
+  // Close popups on Escape
+  useEffect(() => {
+    if (!donationOpen && !downloadOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setDonationOpen(false);
+        setDownloadOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [donationOpen, downloadOpen]);
+
+  const handleUndo = useCallback(() => {
+    if (undoStack.current.length === 0) return;
+    const prev = undoStack.current.pop()!;
+    redoStack.current.push({ image: image, settings: settings });
+    setImage(prev.image);
+    setSettings(prev.settings);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (redoStack.current.length === 0) return;
+    const next = redoStack.current.pop()!;
+    undoStack.current.push({ image: image, settings: settings });
+    setImage(next.image);
+    setSettings(next.settings);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Undo/redo keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [handleUndo, handleRedo]);
+
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -233,18 +382,29 @@ export default function App() {
   };
 
   const clearImage = () => {
+    saveState();
     setImage(null);
     setPreviewUrl(null);
+    setCropMode(false);
+    setCrop(undefined);
+    setCompletedCrop(undefined);
   };
 
-  const handleDownload = async () => {
+  const handleDownloadFormat = useCallback(async (format: "png" | "jpeg" | "webp") => {
     const canvas = document.createElement("canvas");
     await renderToCanvas(canvas, 1);
-    const link = document.createElement("a");
-    link.download = "styled-screenshot.png";
-    link.href = canvas.toDataURL("image/png");
-    link.click();
-  };
+    const mimeType = format === "jpeg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
+    const ext = format === "jpeg" ? "jpg" : format;
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const link = document.createElement("a");
+      link.download = `styled-screenshot.${ext}`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }, mimeType, 1);
+    setDownloadOpen(false);
+  }, [renderToCanvas]);
 
   const handleCopy = async () => {
     const canvas = document.createElement("canvas");
@@ -266,6 +426,46 @@ export default function App() {
     setSettings((s) => ({ ...s, ...patch }));
   const updateShadow = (patch: Partial<ShadowSettings>) =>
     setSettings((s) => ({ ...s, shadow: { ...s.shadow, ...patch } }));
+  const setPaddingY = (v: number) =>
+    setSettings((s) => s.paddingLocked ? { ...s, paddingY: v, paddingX: v } : { ...s, paddingY: v });
+  const setPaddingX = (v: number) =>
+    setSettings((s) => s.paddingLocked ? { ...s, paddingX: v, paddingY: v } : { ...s, paddingX: v });
+
+  const handleReset = () => {
+    saveState();
+    setSettings(DEFAULT_SETTINGS);
+  };
+
+  const handleCropApply = useCallback(() => {
+    if (!image || !completedCrop || !imgRef.current) return;
+    saveState();
+    const imgEl = imgRef.current;
+    const img = new window.Image();
+    img.onload = () => {
+      const scaleX = img.naturalWidth / imgEl.width;
+      const scaleY = img.naturalHeight / imgEl.height;
+      const sx = completedCrop.x * scaleX;
+      const sy = completedCrop.y * scaleY;
+      const sw = completedCrop.width * scaleX;
+      const sh = completedCrop.height * scaleY;
+      const c = document.createElement("canvas");
+      c.width = sw;
+      c.height = sh;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      setImage(c.toDataURL("image/png"));
+      setCropMode(false);
+      setCrop(undefined);
+      setCompletedCrop(undefined);
+    };
+    img.src = image;
+  }, [image, completedCrop, settings]);
+
+  const toggleCropMode = useCallback(() => {
+    setCrop(undefined);
+    setCompletedCrop(undefined);
+    setCropMode((v) => !v);
+  }, []);
 
   return (
     <div
@@ -287,10 +487,20 @@ export default function App() {
         </div>
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => setDonationOpen(true)}
+            className="h-10 flex items-center gap-1.5 px-3 rounded-lg border border-border text-muted-foreground hover:text-[#FF2424] hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer text-xs font-medium"
+            style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.03)" }}
+          >
+            <svg width="14" height="12" viewBox="0 0 32 26" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 text-[#FF2424]">
+              <path d="M13.616 24.2483C9.38413 21.2698 1 14.4608 1 8.33328C1 4.28321 4.15789 1 8.5 1C10.75 1 13 1.70588 16 4.52938C19 1.70588 21.25 1 23.5 1C27.8421 1 31 4.28321 31 8.33328C31 14.4608 22.6159 21.2698 18.384 24.2483C16.9599 25.2506 15.0401 25.2506 13.616 24.2483Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {t("donate")}
+          </button>
+          <button
             onClick={toggleLang}
             aria-label={lang}
             title={lang === "en" ? "Русский" : "English"}
-            className="w-10 h-10 flex items-center justify-center rounded-lg border border-border font-bold text-xs tracking-wider text-muted-foreground hover:bg-muted transition-colors active:scale-[0.96]"
+            className="w-10 h-10 flex items-center justify-center rounded-lg border border-border font-bold text-xs tracking-wider text-muted-foreground hover:bg-muted transition-colors active:scale-[0.96] cursor-pointer"
           >
             {lang === "en" ? "EN" : "RU"}
           </button>
@@ -298,7 +508,7 @@ export default function App() {
           onClick={toggleTheme}
           aria-label="Toggle dark mode"
           title={dark ? "Light mode" : "Dark mode"}
-          className="w-10 h-10 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors active:scale-[0.96]"
+          className="w-10 h-10 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors active:scale-[0.96] cursor-pointer"
         >
           <div className="relative w-5 h-5">
             <AnimatePresence initial={false}>
@@ -308,7 +518,7 @@ export default function App() {
                   initial={{ opacity: 0, scale: 0.25 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.25 }}
-                  transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+                  transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
                   className="absolute inset-0 flex items-center justify-center"
                 >
                   <Sun className="w-4 h-4" />
@@ -319,7 +529,7 @@ export default function App() {
                   initial={{ opacity: 0, scale: 0.25 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.25 }}
-                  transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+                  transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
                   className="absolute inset-0 flex items-center justify-center"
                 >
                   <Moon className="w-4 h-4" />
@@ -337,10 +547,11 @@ export default function App() {
           <div className="flex flex-col lg:flex-row gap-6 h-full max-h-full min-h-0">
             {/* LEFT PANEL */}
             <div
-              className="w-full lg:w-[30%] bg-card rounded-2xl flex flex-col gap-6 p-6 min-h-0 overflow-y-auto"
+              className="w-full lg:w-[25%] bg-card rounded-2xl flex flex-col gap-6 p-6 min-h-0 overflow-y-auto"
               style={{
                 boxShadow:
                   "0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.05)",
+                scrollbarGutter: "stable",
               }}
             >
               <h2 className="text-base font-semibold text-foreground">
@@ -411,12 +622,16 @@ export default function App() {
                 )}
               </div>
 
-              {/* Styling controls */}
+                {/* Styling controls */}
               <div className="flex flex-col gap-5">
-                <SectionLabel>{t("stylingControls")}</SectionLabel>
 
-                {/* Background */}
-                <ControlRow label={t("background")}>
+                <CollapsibleSection
+                  id="background"
+                  label={t("background")}
+                  isOpen={sectionsOpen.background}
+                  onToggle={toggleSection}
+                >
+                <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2 flex-wrap min-h-[44px]">
                     <BgToggle
                       active={settings.bgType === "solid"}
@@ -436,59 +651,73 @@ export default function App() {
                     >
                       {t("none")}
                     </BgToggle>
+                    <button
+                      onClick={() => update({ bgType: DEFAULT_SETTINGS.bgType, bgColor: DEFAULT_SETTINGS.bgColor, gradientFrom: DEFAULT_SETTINGS.gradientFrom, gradientTo: DEFAULT_SETTINGS.gradientTo, gradientAngle: DEFAULT_SETTINGS.gradientAngle })}
+                      className="flex items-center justify-center w-5 h-5 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted transition-all duration-150 opacity-0 hover:opacity-100 active:scale-[0.96] cursor-pointer"
+                      title="Reset background"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                    <AnimatePresence mode="popLayout">
                     {settings.bgType === "solid" && (
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer">
-                          <span
-                            className="w-5 h-5 rounded-sm"
-                            style={{ background: settings.bgColor }}
-                          />
-                        </span>
-                        <input
-                          type="color"
-                          value={settings.bgColor}
-                          onChange={(e) => update({ bgColor: e.target.value })}
-                          className="sr-only"
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+                      >
+                      <ColorPickerSketch
+                        color={settings.bgColor}
+                        onChange={(c) => update({ bgColor: c })}
+                      >
+                      <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer">
+                        <span
+                          className="w-5 h-5 rounded-sm"
+                          style={{ background: settings.bgColor }}
                         />
-                      </label>
+                      </span>
+                      </ColorPickerSketch>
+                      </motion.div>
                     )}
+                    </AnimatePresence>
+                    <AnimatePresence mode="popLayout">
                     {settings.bgType === "gradient" && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+                      >
                       <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2">
                           <label className="flex items-center gap-1.5 cursor-pointer group">
+                            <ColorPickerSketch
+                              color={settings.gradientFrom}
+                              onChange={(c) => update({ gradientFrom: c })}
+                            >
                             <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer transition-shadow group-hover:shadow-md">
                               <span
                                 className="w-5 h-5 rounded-sm"
                                 style={{ background: settings.gradientFrom }}
                               />
                             </span>
+                            </ColorPickerSketch>
                             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("from")}</span>
-                            <input
-                              type="color"
-                              value={settings.gradientFrom}
-                              onChange={(e) =>
-                                update({ gradientFrom: e.target.value })
-                              }
-                              className="sr-only"
-                            />
                           </label>
                           <span className="text-xs text-muted-foreground/50">→</span>
                           <label className="flex items-center gap-1.5 cursor-pointer group">
+                            <ColorPickerSketch
+                              color={settings.gradientTo}
+                              onChange={(c) => update({ gradientTo: c })}
+                            >
                             <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer transition-shadow group-hover:shadow-md">
                               <span
                                 className="w-5 h-5 rounded-sm"
                                 style={{ background: settings.gradientTo }}
                               />
                             </span>
+                            </ColorPickerSketch>
                             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("to")}</span>
-                            <input
-                              type="color"
-                              value={settings.gradientTo}
-                              onChange={(e) =>
-                                update({ gradientTo: e.target.value })
-                              }
-                              className="sr-only"
-                            />
                           </label>
                         </div>
                         <div className="flex items-center gap-3">
@@ -519,22 +748,24 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+                      </motion.div>
                     )}
+                    </AnimatePresence>
                   </div>
-                </ControlRow>
+                </div>
+                </CollapsibleSection>
 
-                {/* Padding */}
-                <ControlRow label={`${t("padding")} — ${settings.padding}px`}>
-                  <StyledSlider
-                    min={0}
-                    max={80}
-                    value={settings.padding}
-                    onChange={(v) => update({ padding: v })}
-                  />
-                </ControlRow>
+                <SettingsDivider />
 
+                {/* Layout */}
+                <CollapsibleSection
+                  id="layout"
+                  label={t("layout")}
+                  isOpen={sectionsOpen.layout}
+                  onToggle={toggleSection}
+                >
                 {/* Background size */}
-                <ControlRow label={t("canvasSize")}>
+                <ControlRow label={t("canvasSize")} onReset={() => update({ bgWidth: DEFAULT_SETTINGS.bgWidth, bgHeight: DEFAULT_SETTINGS.bgHeight })}>
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       W
@@ -572,13 +803,58 @@ export default function App() {
                   </div>
                 </ControlRow>
 
+                {/* Padding */}
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground">{t("padding")}</p>
+                  <button
+                    onClick={() => update({ paddingLocked: !settings.paddingLocked })}
+                    className={`w-7 h-7 flex items-center justify-center rounded-md transition-all duration-150 active:scale-[0.96] cursor-pointer ${
+                      settings.paddingLocked
+                      ? "bg-[#49c5b6] text-white shadow-sm"
+                      : "text-muted-foreground/40 hover:text-foreground bg-muted hover:bg-muted"
+                    }`}
+                    title={settings.paddingLocked ? "Unlink padding values" : "Link padding values"}
+                    style={settings.paddingLocked ? { boxShadow: "0 1px 4px rgba(73,197,182,0.35)" } : undefined}
+                  >
+                    {settings.paddingLocked ? <Lock className="w-3.5 h-3.5" /> : <LockOpen className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <ControlRow label={`↕ ${t("paddingVertical")} — ${settings.paddingY}px`} onReset={() => setPaddingY(DEFAULT_SETTINGS.paddingY)}>
+                  <StyledSlider
+                    min={0}
+                    max={80}
+                    value={settings.paddingY}
+                    onChange={setPaddingY}
+                  />
+                </ControlRow>
+                <ControlRow label={`↔ ${t("paddingHorizontal")} — ${settings.paddingX}px`} onReset={() => setPaddingX(DEFAULT_SETTINGS.paddingX)}>
+                  <StyledSlider
+                    min={0}
+                    max={80}
+                    value={settings.paddingX}
+                    onChange={setPaddingX}
+                  />
+                </ControlRow>
+                </CollapsibleSection>
+
+                <SettingsDivider />
+
+                {/* Corners */}
+                <CollapsibleSection
+                  id="corners"
+                  label={t("corners")}
+                  isOpen={sectionsOpen.corners}
+                  onToggle={toggleSection}
+                >
+
                 {/* Background border radius */}
                 <ControlRow
                   label={`${t("bgRadius")} — ${settings.borderRadius}px`}
+                  onReset={() => update({ borderRadius: DEFAULT_SETTINGS.borderRadius })}
                 >
                   <StyledSlider
                     min={0}
-                    max={48}
+                    max={100}
                     value={settings.borderRadius}
                     onChange={(v) => update({ borderRadius: v })}
                   />
@@ -587,19 +863,45 @@ export default function App() {
                 {/* Image border radius */}
                 <ControlRow
                   label={`${t("imageRadius")} — ${settings.imageBorderRadius}px`}
+                  onReset={() => update({ imageBorderRadius: DEFAULT_SETTINGS.imageBorderRadius })}
                 >
                   <StyledSlider
                     min={0}
-                    max={48}
+                    max={100}
                     value={settings.imageBorderRadius}
                     onChange={(v) => update({ imageBorderRadius: v })}
                   />
                 </ControlRow>
+                </CollapsibleSection>
+
+                <SettingsDivider />
 
                 {/* Shadow */}
-                <div className="space-y-3">
-                  <SectionLabel>{t("shadow")}</SectionLabel>
-                  <ControlRow label={`${t("offsetX")} — ${settings.shadow.x}px`}>
+                <CollapsibleSection
+                  id="shadow"
+                  label={t("shadow")}
+                  isOpen={sectionsOpen.shadow}
+                  onToggle={toggleSection}
+                >
+                  <div className="flex items-center gap-3 mb-3 pl-0.5">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.shadowEnabled}
+                        onChange={(e) => update({ shadowEnabled: e.target.checked })}
+                        className="sr-only"
+                      />
+                      <span className={`w-9 h-5 rounded-full transition-colors duration-200 flex items-center px-0.5 ${settings.shadowEnabled ? "bg-[#49c5b6]" : "bg-border"}`}
+                        style={settings.shadowEnabled ? { boxShadow: "0 0 0 1px rgba(73,197,182,0.3)" } : undefined}
+                      >
+                        <span className={`w-3.5 h-3.5 rounded-full bg-white transition-transform duration-200 ${settings.shadowEnabled ? "translate-x-[18px]" : "translate-x-0"}`} />
+                      </span>
+                    </label>
+                    <span className="text-xs text-muted-foreground select-none">{settings.shadowEnabled ? "On" : "Off"}</span>
+                  </div>
+                  {settings.shadowEnabled && (
+                  <>
+                  <ControlRow label={`${t("offsetX")} — ${settings.shadow.x}px`} onReset={() => updateShadow({ x: DEFAULT_SETTINGS.shadow.x })}>
                     <StyledSlider
                       min={-40}
                       max={40}
@@ -607,7 +909,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ x: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`${t("offsetY")} — ${settings.shadow.y}px`}>
+                  <ControlRow label={`${t("offsetY")} — ${settings.shadow.y}px`} onReset={() => updateShadow({ y: DEFAULT_SETTINGS.shadow.y })}>
                     <StyledSlider
                       min={-40}
                       max={40}
@@ -615,7 +917,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ y: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`${t("blur")} — ${settings.shadow.blur}px`}>
+                  <ControlRow label={`${t("blur")} — ${settings.shadow.blur}px`} onReset={() => updateShadow({ blur: DEFAULT_SETTINGS.shadow.blur })}>
                     <StyledSlider
                       min={0}
                       max={80}
@@ -623,7 +925,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ blur: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`${t("spread")} — ${settings.shadow.spread}px`}>
+                  <ControlRow label={`${t("spread")} — ${settings.shadow.spread}px`} onReset={() => updateShadow({ spread: DEFAULT_SETTINGS.shadow.spread })}>
                     <StyledSlider
                       min={-20}
                       max={40}
@@ -631,7 +933,7 @@ export default function App() {
                       onChange={(v) => updateShadow({ spread: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={`${t("opacity")} — ${settings.shadow.opacity}%`}>
+                  <ControlRow label={`${t("opacity")} — ${settings.shadow.opacity}%`} onReset={() => updateShadow({ opacity: DEFAULT_SETTINGS.shadow.opacity })}>
                     <StyledSlider
                       min={0}
                       max={100}
@@ -639,32 +941,31 @@ export default function App() {
                       onChange={(v) => updateShadow({ opacity: v })}
                     />
                   </ControlRow>
-                  <ControlRow label={t("color")}>
+                  <ControlRow label={t("color")} onReset={() => updateShadow({ color: DEFAULT_SETTINGS.shadow.color })}>
                     <label className="flex items-center gap-1.5 cursor-pointer">
+                      <ColorPickerSketch
+                        color={settings.shadow.color}
+                        onChange={(c) => updateShadow({ color: c })}
+                        offsetY={55}
+                      >
                       <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer">
                         <span
                           className="w-5 h-5 rounded-sm"
                           style={{ background: settings.shadow.color }}
                         />
                       </span>
-                      <input
-                        type="color"
-                        value={settings.shadow.color}
-                        onChange={(e) =>
-                          updateShadow({ color: e.target.value })
-                        }
-                        className="sr-only"
-                      />
+                      </ColorPickerSketch>
                       <span className="text-xs text-muted-foreground font-mono">
                         {settings.shadow.color}
                       </span>
                     </label>
-                  </ControlRow>
-                </div>
+                </ControlRow>
+                  </>)}
+                </CollapsibleSection>
 
                 {/* Reset */}
                 <button
-                  onClick={() => setSettings(DEFAULT_SETTINGS)}
+                  onClick={handleReset}
                   className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#2779a7] transition-colors self-start mt-1 active:scale-[0.96] cursor-pointer"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -673,24 +974,96 @@ export default function App() {
               </div>
             </div>
 
+            {/* Vertical divider */}
+            <div className="hidden lg:block w-px bg-gradient-to-b from-transparent via-border dark:via-border/60 to-transparent shrink-0" />
+
             {/* RIGHT PANEL */}
           <div
-            className="w-full lg:w-[70%] bg-card rounded-2xl flex flex-col min-h-0 overflow-hidden"
+            className="w-full lg:w-[75%] bg-card rounded-2xl flex flex-col min-h-0 overflow-hidden"
             style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.05)" }}
           >
+              {/* Toolbar */}
+              <div className="flex items-center gap-1 px-3 py-2 border-b border-border bg-muted/40 shrink-0">
+                <button
+                  onClick={toggleCropMode}
+                  disabled={!image || cropMode}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  {t("cropImage")}
+                </button>
+                <div className="w-px h-5 bg-border mx-1.5" />
+                <button
+                  onClick={handleUndo}
+                  disabled={undoStack.current.length === 0}
+                  className="flex items-center justify-center w-9 h-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-25 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer"
+                  title="Undo (Ctrl+Z)"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={handleRedo}
+                  disabled={redoStack.current.length === 0}
+                  className="flex items-center justify-center w-9 h-9 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-25 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer"
+                  title="Redo (Ctrl+Shift+Z)"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                </button>
+                {cropMode && (
+                  <div className="flex items-center gap-1 ml-auto">
+                    <button
+                      onClick={handleCropApply}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-white transition-all duration-150 active:scale-[0.96] cursor-pointer"
+                      style={{
+                        background: "linear-gradient(135deg,#49c5b6,#3db5a7)",
+                        boxShadow: "0 1px 3px rgba(73,197,182,0.3)",
+                      }}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      {t("cropApply")}
+                    </button>
+                    <button
+                      onClick={() => setCropMode(false)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 active:scale-[0.96] cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      {t("cropCancel")}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Preview area */}
                 <div
-                  className="flex-1 flex items-center justify-center p-8 rounded-t-2xl overflow-hidden min-h-0"
+                  ref={previewContainerRef}
+                  className="flex-1 flex items-center justify-center p-8 overflow-hidden min-h-0 relative"
                   style={{
                     background: dark
-                      ? "repeating-conic-gradient(#1e2330 0% 25%, #252a3a 0% 50%) 0 0 / 20px 20px"
-                      : "repeating-conic-gradient(#F3F4F6 0% 25%, #FFFFFF 0% 50%) 0 0 / 20px 20px",
+                      ? "repeating-conic-gradient(#3a3a3a 0% 25%, #505050 0% 50%) 0 0 / 20px 20px"
+                      : "repeating-conic-gradient(#E5E7EB 0% 25%, #FFFFFF 0% 50%) 0 0 / 20px 20px",
                   }}
                 >
-                {previewUrl ? (
+                {cropMode && cropPreviewSrc ? (
+                  <div className="absolute inset-[32px] grid place-items-center" style={{ gridTemplateRows: "1fr", gridTemplateColumns: "1fr" }}>
+                    <ReactCrop
+                      crop={crop}
+                      onChange={(c) => setCrop(c)}
+                      onComplete={(c) => setCompletedCrop(c)}
+                      ruleOfThirds
+                    >
+                      <img
+                        ref={imgRef}
+                        src={cropPreviewSrc}
+                        alt="Crop"
+                        crossOrigin="anonymous"
+                      />
+                    </ReactCrop>
+                  </div>
+                ) : previewUrl ? (
                   <img
                     src={previewUrl}
                     alt={t("styledPreview")}
+                    className="relative z-0"
                     style={{
                       maxWidth: "100%",
                       maxHeight: "100%",
@@ -708,27 +1081,57 @@ export default function App() {
 
               {/* Actions */}
               <div className="p-5 flex flex-col sm:flex-row items-center justify-center gap-3">
-                <button
-                  onClick={handleDownload}
-                  disabled={!image}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-[opacity,filter,transform] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.96] hover:brightness-90"
-                  style={{
-                    background: image
-                      ? "linear-gradient(135deg,#49c5b6,#3db5a7)"
-                      : "#49c5b6",
-                    boxShadow: image
-                      ? "0 2px 8px rgba(73,197,182,0.35)"
-                      : "none",
-                  }}
-                >
-                  <Download className="w-4 h-4" />
-                  {t("downloadStyledImage")}
-                </button>
+                {downloadOpen && (
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setDownloadOpen(false)}
+                  />
+                )}
+                <div className="relative z-50">
+                  <button
+                    onClick={() => setDownloadOpen((v) => !v)}
+                    disabled={!image}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-[opacity,filter,transform] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.96] hover:brightness-90 cursor-pointer"
+                    style={{
+                      background: image
+                        ? "linear-gradient(135deg,#49c5b6,#3db5a7)"
+                        : "#49c5b6",
+                      boxShadow: image
+                        ? "0 2px 8px rgba(73,197,182,0.35)"
+                        : "none",
+                    }}
+                  >
+                    <Download className="w-4 h-4" />
+                    {t("downloadStyledImage")}
+                  </button>
+                  <AnimatePresence>
+                    {downloadOpen && (
+                      <motion.div
+                        className="absolute bottom-full left-0 right-0 mb-2 bg-card rounded-xl p-1.5 flex flex-col gap-0.5"
+                        style={{ boxShadow: "0 0 0 2px rgba(73,197,182,0.3), 0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06)", transformOrigin: "bottom center" }}
+                        initial={{ opacity: 0, scale: 0.92, y: 6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.92, y: 6 }}
+                        transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
+                      >
+                        {(["png", "jpeg", "webp"] as const).map((fmt) => (
+                          <button
+                            key={fmt}
+                            onClick={() => handleDownloadFormat(fmt)}
+                            className="flex items-center justify-center px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 active:scale-[0.96] cursor-pointer"
+                          >
+                            <span className="uppercase font-semibold text-[10px] tracking-wider min-w-[36px]">{fmt}</span>
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
 
                 <button
                   onClick={handleCopy}
                   disabled={!image}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-[opacity,filter,transform] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.96] hover:brightness-90"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-[opacity,filter,transform] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.96] hover:brightness-90 cursor-pointer"
                   style={{
                     background: "#2779a7",
                     boxShadow: image
@@ -758,11 +1161,128 @@ export default function App() {
           {t("footerPrivacy")}
         </Link>
       </div>
+
+      {/* Donation popup */}
+      <AnimatePresence>
+        {donationOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-6"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+          >
+            <motion.div
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => setDonationOpen(false)}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            />
+            <motion.div
+              className="relative bg-card rounded-2xl p-8 max-w-[430px] w-full text-center flex flex-col items-center gap-5"
+              style={{ boxShadow: "0 0 0 2px rgba(73,197,182,0.3), 0 8px 32px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.06)" }}
+              initial={{ opacity: 0, scale: 0.92, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 12 }}
+              transition={{ type: "spring", duration: 0.35, bounce: 0.15 }}
+            >
+              <svg width="48" height="40" viewBox="0 0 32 26" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+                <path d="M13.616 24.2483C9.38413 21.2698 1 14.4608 1 8.33328C1 4.28321 4.15789 1 8.5 1C10.75 1 13 1.70588 16 4.52938C19 1.70588 21.25 1 23.5 1C27.8421 1 31 4.28321 31 8.33328C31 14.4608 22.6159 21.2698 18.384 24.2483C16.9599 25.2506 15.0401 25.2506 13.616 24.2483Z" stroke="#FF2424" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <h3 className="text-base font-semibold">{t("donateTitle")}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {t("donateText")}
+              </p>
+              <img
+                src="/qr-donate-donationalers.png"
+                alt="DonationAlerts QR"
+                className="w-28 h-28 border border-border"
+                style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}
+              />
+              <a
+                href="https://www.donationalerts.com/r/karkov"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white transition-all duration-150 active:scale-[0.96] hover:brightness-90"
+                style={{
+                  background: "#FF2424",
+                  boxShadow: "0 2px 8px rgba(255,36,36,0.3)",
+                }}
+              >
+                {t("donateLink")}
+              </a>
+              <button
+                onClick={() => setDonationOpen(false)}
+                className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors cursor-pointer"
+              >
+                {t("close")}
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
 /* ---- Sub-components ---- */
+
+function CollapsibleSection({
+  id,
+  label,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  id: string;
+  label: string;
+  isOpen: boolean;
+  onToggle: (id: string) => void;
+  children: any;
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      <button
+        onClick={() => onToggle(id)}
+        className="flex items-center gap-1.5 w-full group cursor-pointer text-left"
+      >
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors duration-150">
+          {label}
+        </p>
+        <motion.div
+          animate={{ rotate: isOpen ? 0 : -90 }}
+          transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+        >
+          <ChevronDown className="w-3 h-3 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors duration-150" />
+        </motion.div>
+      </button>
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            key={id}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col gap-5">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SettingsDivider() {
+  return (
+    <div className="h-px bg-gradient-to-r from-transparent via-border dark:via-border/60 to-transparent my-1" />
+  );
+}
 
 function SectionLabel({ children }: { children: any }) {
   return (
@@ -776,14 +1296,27 @@ function ControlRow({
   label,
   children,
   labelClassName,
+  onReset,
 }: {
   label: string;
   children: any;
   labelClassName?: string;
+  onReset?: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className={`text-xs font-medium text-foreground ${labelClassName ?? ""}`}>{label}</span>
+    <div className="flex flex-col gap-1.5 group/row">
+      <div className="flex items-center gap-1.5">
+        <span className={`text-xs font-medium text-foreground ${labelClassName ?? ""}`}>{label}</span>
+        {onReset && (
+          <button
+            onClick={onReset}
+            className="flex items-center justify-center w-4 h-4 rounded text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted transition-all duration-150 opacity-0 group-hover/row:opacity-100 active:scale-[0.96] cursor-pointer"
+            title="Reset"
+          >
+            <RotateCcw className="w-3 h-3" />
+          </button>
+        )}
+      </div>
       {children}
     </div>
   );
@@ -827,7 +1360,7 @@ function StyledSlider({
   const pct = ((value - min) / (max - min)) * 100;
   return (
     <div className="relative h-5 flex items-center">
-      <div className="absolute inset-x-0 h-1.5 rounded-full bg-[#E5E7EB] overflow-hidden">
+      <div className="absolute inset-x-0 h-1.5 rounded-full bg-border overflow-hidden">
         <div
           className="h-full rounded-full"
           style={{
@@ -845,37 +1378,6 @@ function StyledSlider({
         className="relative w-full appearance-none bg-transparent cursor-pointer"
         style={{ WebkitAppearance: "none" } as React.CSSProperties}
       />
-      <style>{`
-        input[type=range]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #ffffff;
-          border: 2px solid #49c5b6;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-          cursor: grab;
-          transition: border-color 0.15s, box-shadow 0.15s;
-        }
-        input[type=range]::-webkit-slider-thumb:hover {
-          border-color: #2779a7;
-          box-shadow: 0 2px 8px rgba(73,197,182,0.25);
-        }
-        input[type=range]:active::-webkit-slider-thumb {
-          cursor: grabbing;
-        }
-        input[type=range]::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #ffffff;
-          border: 2px solid #49c5b6;
-          cursor: grab;
-        }
-        input[type=range]:active::-moz-range-thumb {
-          cursor: grabbing;
-        }
-      `}</style>
     </div>
   );
 }
@@ -925,6 +1427,67 @@ function GradientAngleIndicator({ angle }: { angle: number }) {
           transition: "transform 0.15s cubic-bezier(0.2,0,0,1)",
         }}
       />
+    </div>
+  );
+}
+
+function ColorPickerSketch({
+  color,
+  onChange,
+  children,
+  offsetY = 0,
+}: {
+  color: string;
+  onChange: (c: string) => void;
+  children: React.ReactNode;
+  offsetY?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  return (
+    <div className="relative">
+      <div
+        ref={triggerRef}
+        onClick={() => {
+          if (!open && triggerRef.current) {
+            const r = triggerRef.current.getBoundingClientRect();
+            const gap = 8;
+            const popH = 380;
+            const below = r.bottom + gap + popH <= window.innerHeight;
+            setPos({
+              left: Math.max(8, Math.min(r.left, window.innerWidth - 240)),
+              top: (below ? r.bottom + gap : r.top - gap - popH) + offsetY,
+            });
+          }
+          setOpen((v) => !v);
+        }}
+        className="inline-flex cursor-pointer"
+      >
+        {children}
+      </div>
+      {open && (
+        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="fixed z-50"
+            style={{ left: pos.left, top: pos.top }}
+            initial={{ opacity: 0, scale: 0.92, y: 6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 6 }}
+            transition={{ type: "spring", duration: 0.3, bounce: 0 }}
+          >
+            <Sketch
+              color={color}
+              onChange={(c) => onChange(c.hex)}
+              disableAlpha
+              style={{ boxShadow: "0 0 0 2px rgba(73,197,182,0.3), 0 4px 24px rgba(0,0,0,0.15)" }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

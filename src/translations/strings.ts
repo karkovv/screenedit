@@ -25,9 +25,13 @@ export const strings = {
   to: { en: "To", ru: "До" },
   gradientAngle: { en: "Angle", ru: "Угол" },
   padding: { en: "Padding", ru: "Отступ" },
+  paddingVertical: { en: "Top / Bottom", ru: "Сверху / Снизу" },
+  paddingHorizontal: { en: "Left / Right", ru: "Слева / Справа" },
   canvasSize: { en: "Canvas Size", ru: "Размер холста" },
   bgRadius: { en: "Bg Radius", ru: "Радиус фона" },
   imageRadius: { en: "Image Radius", ru: "Радиус изображения" },
+  layout: { en: "Canvas Settings", ru: "Настройки Canvas" },
+  corners: { en: "Corners", ru: "Углы" },
   shadow: { en: "Shadow", ru: "Тень" },
   offsetX: { en: "Offset X", ru: "Смещение X" },
   offsetY: { en: "Offset Y", ru: "Смещение Y" },
@@ -37,6 +41,9 @@ export const strings = {
   color: { en: "Color", ru: "Цвет" },
   resetToDefaults: { en: "Reset to defaults", ru: "Сбросить настройки" },
   remove: { en: "Remove image", ru: "Удалить" },
+  cropImage: { en: "Crop image", ru: "Обрезать" },
+  cropApply: { en: "Apply", ru: "Применить" },
+  cropCancel: { en: "Cancel", ru: "Отмена" },
 
   // Right panel
   styledPreview: { en: "Styled preview", ru: "Стилизованный превью" },
@@ -49,4 +56,11 @@ export const strings = {
 
   // Footer
   footerPrivacy: { en: "ScreenStyler runs entirely in your browser. We don't store, upload, or share your images.", ru: "ScreenStyler работает полностью в вашем браузере. Мы не храним, не загружаем и не передаём ваши изображения." },
+
+  // Donation
+  donate: { en: "Donate", ru: "Донат" },
+  donateTitle: { en: "Support the project", ru: "Поддержать проект" },
+  donateText: { en: "ScreenStyler is completely free and ad-free. If you like it and find it useful in your work, you can support me with a donation for tea :)", ru: "ScreenStyler полностью бесплатный и без рекламы. Если он вам нравится и полезен в работе, вы можете поддержать меня донатом на чай :)" },
+  donateLink: { en: "Open DonationAlerts", ru: "Открыть DonationAlerts" },
+  close: { en: "Close", ru: "Закрыть" },
 };

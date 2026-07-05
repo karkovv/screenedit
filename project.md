@@ -1,61 +1,76 @@
 # ScreenStyler
 
 ## Что это
-Веб-приложение для стилизации скриншотов: загрузка → наложение фона, скруглений, тени → экспорт PNG.
+Веб-приложение для стилизации скриншотов: загрузка → наложение фона, скруглений, тени → экспорт PNG/JPEG/WebP.
 
 ## Стек
 - React 18 + TypeScript
 - Vite 6
 - Tailwind CSS 4 + `tw-animate-css`
 - `motion` (framer-motion преемник) — анимации (AnimatePresence, motion.div)
-- Lucide React — иконки (Upload, Download, Clipboard, X, Sun, Moon, RotateCcw, Image)
+- Lucide React — иконки
 - Canvas API — рендеринг экспорта
+- react-router v7 — роутинг (/ → App, /privacy → Privacy)
+- react-image-crop v11 — кроп изображения
+- @uiw/react-color-sketch — кастомный Sketch-пикер цвета
 
 ## Структура
 ```
 ScreenStyler web app/
-├── index.html              — favicon: /logo.svg
-├── logo.svg                — логотип проекта
-├── public/logo.svg         — копия для статики
+├── heart-icon.svg           — иконка для кнопки доната
+├── index.html               — favicon: /logo.svg, dark class + CSP meta
+├── logo.svg                 — логотип проекта
+├── public/
+│   ├── logo.svg             — копия для статики
+│   └── qr-donate-donationalers.png — QR для донатов
 ├── src/
-│   ├── main.tsx            — точка входа (LangProvider → App)
+│   ├── main.tsx             — точка входа (BrowserRouter, Routes)
 │   ├── translations/
-│   │   ├── strings.ts      — EN/RU строки интерфейса
+│   │   ├── strings.ts       — EN/RU строки интерфейса
 │   │   ├── LangProvider.tsx — контекст и хук useLang()
 │   │   └── index.ts
 │   ├── styles/
-│   │   ├── index.css       — импорт fonts + tailwind + theme
-│   │   ├── theme.css       — CSS-переменные, @layer base, темная тема
-│   │   ├── tailwind.css    — @import 'tailwindcss'
-│   │   └── fonts.css       — Inter Google Fonts
+│   │   ├── index.css        — импорт fonts + tailwind + theme
+│   │   ├── theme.css        — CSS-переменные, @layer base, тёмная тема, слайдеры, ReactCrop
+│   │   ├── tailwind.css     — @import 'tailwindcss'
+│   │   └── fonts.css        — Inter Google Fonts
 │   └── app/
-│       └── App.tsx         — весь UI и логика в одном файле
+│       ├── App.tsx          — основной UI (все контролы + превью)
+│       └── Privacy.tsx      — страница политики конфиденциальности
 ```
 
 ## Основные фичи
-- Drag & drop / click / **Ctrl+V** загрузка изображения
+- Drag & drop / click / **Ctrl+V** загрузка изображения (лимит 50MB)
+- **Кроп изображения**: react-image-crop + превью в 0.5x scale для попадания в область
+- **Undo/Redo** — для кропа, удаления и сброса настроек (Ctrl+Z / Ctrl+Shift+Z)
 - Настройка фона: Solid / Gradient / None (прозрачный)
   - Gradient: два color picker'а From → To + **угол наклона** (слайдер + ручной ввод, 0–360°)
   - Визуальный индикатор угла (круг с вращающейся линией)
+  - Плавное появление/скрытие через AnimatePresence
 - Размер Canvas: W × H (дефолт 1920×1080), настраиваемые числовые поля
 - Padding — отступ изображения от краёв фона
-- Border Radius — отдельно для фона (Bg) и изображения (Image)
-- Тень: Offset X/Y, Blur, Spread, Opacity, Color
-- **Переключатель языка**: EN / RU (через хедер)
-- **Удаление скрина**: кнопка X в зоне загрузки (SES-безопасный сброс)
+- Border Radius — отдельно для фона (Bg) и изображения (Image), до 100px
+- Тень: **чекбокс вкл/выкл**, Offset X/Y, Blur, Spread, Opacity, Color
+- **Кастомный Sketch-пикер цвета** — для всех 4 цветовых полей (bgColor, gradientFrom, gradientTo, shadow)
+  - Popover с spring-анимацией, teal border, backdrop
+- **Кнопки сброса** для каждой настройки (стрелка возврата к дефолту)
+- **Переключатель языка**: EN / RU (через хедер), сохраняется в стейте
+- **Удаление скрина**: кнопка X в зоне загрузки
+- **Donation popup**: кнопка с сердечком → модалка с QR + ссылкой DonationAlerts
+- **Privacy page**: отдельная страница /privacy (GDPR, Google Fonts, Vercel)
 - Сброс всех настроек в дефолт
-- Тёмная тема по умолчанию, переключается через хедер
-- Экспорт: Download как PNG, Copy to clipboard
-- Canvas рендеринг: фон → тень (opaque fill) → изображение (clipped)
+- Тёмная тема по умолчанию (`<html class="dark">`), переключается через хедер
+- **Экспорт**: Download с выбором PNG / JPEG / WebP, Copy to clipboard
+- Canvas рендеринг: clip по borderRadius → фон → shadow → изображение (нет белых углов)
 
 ## Ключевые особенности верстки
-- `h-screen overflow-hidden` на root + `overflow: hidden` на `html, body` — страница не скроллится
+- `h-screen overflow-hidden` на root — страница не скроллится
 - Flex цепочка: root → content → main → row → панели
 - `min-h-0` на каждом flex-ребёнке — разрешает сжатие ниже контента
 - Левая панель (настройки): `overflow-y-auto` — скролл если не влазит
 - Правая панель (превью): обе панели stretch на всю высоту
-- Превью в чекерборде
-- Left/горизонтальный сплит: 30% / 70%
+- Превью в чекерборде (checkerboard)
+- Left/горизонтальный сплит: 25% / 75%
 
 ## Превью (reactive rAF batching)
 - Рендерится в оффскрин-канвас в **0.5x scale** для производительности
@@ -63,19 +78,31 @@ ScreenStyler web app/
 - `renderVersion` ref — отменяет устаревшие рендеры (stale render guard)
 - Результат: `<img src={dataURL} />` — plain img swap
 
-## Canvas экспорт (renderToCanvas)
-- `Promise<void>` — асинхронный, ждёт загрузки `new Image()`
-- Canvas размер = bgWidth × bgHeight (scale=1, полный размер)
-- Изображение центрируется внутри canvas с учётом padding
-- Градиент поддерживает угол наклона через `getGradientCoords()` (тригонометрия от центра)
-- `img.onerror = () => resolve()` — не зависает при ошибке
+## Оптимизация Canvas рендеринга
+- **ImageBitmap кеш** — изображение декодируется один раз при загрузке, переиспользуется на всех перерисовках (слайдеры, настройки)
+- **Temp canvas reuse** — временный canvas для shadow/rounded image создаётся один раз через ref, не аллоцируется заново
+- `imageSmoothingQuality: "high"` — качественный рендер при масштабировании
+- `settings.shadowEnabled` — отключение тени пропускает shadow-блок полностью
 
-## Удалённые компоненты (Figma-шаблон)
-- Все shadcn/ui компоненты (`src/app/components/ui/`) — не использовались
-- `src/app/components/figma/ImageWithFallback.tsx` — не использовался
-- `figmaAssetResolver` плагин в vite.config.ts — ни один импорт не использовал `figma:asset/`
-- `default_shadcn_theme.css` — не импортировался
-- `src/styles/globals.css` — не импортировался
+## Canvas экспорт (renderToCanvas)
+- `Promise<void>` — синхронный (ImageBitmap кеширован, нет ожидания загрузки)
+- Canvas размер = bgWidth × bgHeight (scale=1, полный размер)
+- Весь контент обрезается по borderRadius фона через `ctx.clip()` — ни пустых углов
+- Градиент поддерживает угол наклона через `getGradientCoords()` (тригонометрия от центра)
+- Экспорт через `toBlob` с качеством 1.0 для JPEG/WebP
+
+## Безопасность
+- **CSP** в index.html: `default-src 'self'`, ограничения на script/style/img/font/connect
+- Файлы загружаются только через `accept="image/*"` + MIME-проверка
+- Лимит размера файла: 50MB
+- `rel="noopener noreferrer"` на внешних ссылках
+- Все изображения — data URL, не покидают браузер
+
+## Зависимости (6 runtime)
+```
+@uiw/react-color-sketch  lucide-react  motion  react-image-crop  react-router  tw-animate-css
+```
+(очищено от ~40 неиспользуемых: MUI, Radix, recharts и др.)
 
 ## Известные баги / TODO
 - [ ] Нет обработки resize окна для canvas (export всегда полный размер, ок)
