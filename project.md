@@ -42,7 +42,8 @@ ScreenEdit web app/
 │   │   ├── tailwind.css     — @import 'tailwindcss'
 │   │   └── fonts.css        — Inter Google Fonts
 │   └── app/
-│       ├── App.tsx          — основной UI (все контролы + превью)
+│       ├── App.tsx          — основной UI (все контролы + превью, mobile/desktop лейауты)
+│       ├── useMediaQuery.ts — хук для определения ширины экрана
 │       └── Privacy.tsx      — страница политики конфиденциальности
 ```
 
@@ -93,6 +94,17 @@ ScreenEdit web app/
 - Правая панель (превью): обе панели stretch на всю высоту
 - Превью в чекерборде (checkerboard)
 - Left/горизонтальный сплит: 25% / 75%
+
+## Мобильная вёрстка (< 1024px)
+- **Лейаут**: превью сверху (flex-1), панель настроек снизу
+- **Таб-бар**: 4 вкладки — Background (Palette), Canvas (Maximize2), Corners (Square), Shadow (Layers)
+- **Анимация табов**: `AnimatePresence mode="wait" initial={false}`, fade + slide 4px, 150ms
+- **Хедер**: компактные иконки, скрытый текст на donate, мелкие кнопки lang/theme
+- **Дропзона**: интегрирована в область превью (dashed border overlay при отсутствии изображения)
+- **Хит-области**: табы ≥ 44px ширины, все кнопки `active:scale-[0.96]`
+- **Высота панели**: `max-h[35vh]`, overflow-y-auto
+- **Адаптив**: `useMediaQuery("(min-width: 1024px)")` хук, условный рендеринг desktop/mobile лейаутов
+- **Ресет-кнопка**: в таб-баре справа, применяет `DEFAULT_SETTINGS`
 
 ## Превью (reactive rAF batching)
 - Рендерится в оффскрин-канвас в **0.5x scale** для производительности
