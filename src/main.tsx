@@ -15,6 +15,7 @@ script.textContent = JSON.stringify({
   "applicationCategory": "DesignApplication",
   "operatingSystem": "Web",
   "inLanguage": ["ru", "en"],
+  "keywords": "screenshot editor, image styler, screenshot tool, скриншот редактор, стилизация скриншотов",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "url": "https://screenedit.online/",
 });
