@@ -21,7 +21,7 @@ export default function Privacy() {
         {
           title: "2. External services",
           items: [
-            "Google Fonts — the Inter font is loaded from fonts.googleapis.com and fonts.gstatic.com. Your browser sends your IP address and User-Agent to Google as part of a standard font request. See Google's privacy policy for details.",
+            "Google Fonts — Inter, Roboto, Montserrat, Open Sans, Lato, Nunito, Poppins, Ubuntu, Playfair Display, Fira Code, Space Grotesk, DM Sans, and Bebas Neue are loaded from fonts.googleapis.com and fonts.gstatic.com. Your browser sends your IP address and User-Agent to Google as part of a standard font request. See Google's privacy policy for details.",
             "Vercel — the app is hosted on Vercel. Vercel collects standard server logs (IP address, request timestamp, requested URL, User-Agent) for operational purposes. See Vercel's Data Processing Agreement.",
           ],
         },
@@ -65,7 +65,7 @@ export default function Privacy() {
         {
           title: "2. Внешние сервисы",
           items: [
-            "Google Fonts — шрифт Inter загружается с fonts.googleapis.com и fonts.gstatic.com. Браузер передаёт IP-адрес и User-Agent на серверы Google в рамках стандартного запроса шрифта. Подробнее — в политике конфиденциальности Google.",
+            "Google Fonts — шрифты Inter, Roboto, Montserrat, Open Sans, Lato, Nunito, Poppins, Ubuntu, Playfair Display, Fira Code, Space Grotesk, DM Sans и Bebas Neue загружаются с fonts.googleapis.com и fonts.gstatic.com. Браузер передаёт IP-адрес и User-Agent на серверы Google в рамках стандартного запроса шрифта. Подробнее — в политике конфиденциальности Google.",
             "Vercel — приложение размещено на Vercel. Vercel собирает стандартные серверные логи (IP-адрес, время запроса, URL, User-Agent) в целях эксплуатации. Подробнее — в соглашении об обработке данных Vercel.",
           ],
         },

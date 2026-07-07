@@ -1,3 +1,5 @@
 This project includes components from [shadcn/ui](https://ui.shadcn.com/) used under [MIT license](https://github.com/shadcn-ui/ui/blob/main/LICENSE.md).
 
 This project includes photos from [Unsplash](https://unsplash.com) used under [license](https://unsplash.com/license).
+
+This project uses Google Fonts ([Inter](https://fonts.google.com/specimen/Inter), [Roboto](https://fonts.google.com/specimen/Roboto), [Montserrat](https://fonts.google.com/specimen/Montserrat), [Open Sans](https://fonts.google.com/specimen/Open+Sans), [Lato](https://fonts.google.com/specimen/Lato), [Nunito](https://fonts.google.com/specimen/Nunito), [Poppins](https://fonts.google.com/specimen/Poppins), [Ubuntu](https://fonts.google.com/specimen/Ubuntu), [Playfair Display](https://fonts.google.com/specimen/Playfair+Display), [Fira Code](https://fonts.google.com/specimen/Fira+Code), [Space Grotesk](https://fonts.google.com/specimen/Space+Grotesk), [DM Sans](https://fonts.google.com/specimen/DM+Sans), [Bebas Neue](https://fonts.google.com/specimen/Bebas+Neue)) licensed under the [SIL Open Font License](https://scripts.sil.org/OFL).

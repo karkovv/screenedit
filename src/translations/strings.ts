@@ -64,4 +64,34 @@ export const strings = {
   donateText: { en: "ScreenEdit is completely free and ad-free. If you like it and find it useful in your work, you can support me with a donation for tea :)", ru: "ScreenEdit полностью бесплатный и без рекламы. Если он вам нравится и полезен в работе, вы можете поддержать меня донатом на чай :)" },
   donateLink: { en: "Open DonationAlerts", ru: "Открыть DonationAlerts" },
   close: { en: "Close", ru: "Закрыть" },
+
+  // Text overlay
+  addText: { en: "Add text", ru: "Добавить текст" },
+  textTab: { en: "Text", ru: "Текст" },
+  textSettings: { en: "Text", ru: "Текст" },
+  enterText: { en: "Enter text...", ru: "Введите текст..." },
+  fontFamily: { en: "Font", ru: "Шрифт" },
+  fontSizeLabel: { en: "Size", ru: "Размер" },
+  textColor: { en: "Color", ru: "Цвет" },
+  rotation: { en: "Rotation", ru: "Поворот" },
+  deleteText: { en: "Delete text", ru: "Удалить текст" },
+  noTextSelected: { en: "Click text on preview to edit", ru: "Нажмите на текст в превью чтобы редактировать" },
+  clickToAddText: { en: "Click «Add text» to place one", ru: "Нажмите «Добавить текст»" },
+
+  // Text weight & style
+  weight: { en: "Weight", ru: "Начертание" },
+  italicLabel: { en: "Italic", ru: "Курсив" },
+  on: { en: "On", ru: "Вкл" },
+  off: { en: "Off", ru: "Выкл" },
+
+  // Weight names
+  weight100: { en: "Thin", ru: "Тонкий" },
+  weight200: { en: "Extra Light", ru: "Сверхлёгкий" },
+  weight300: { en: "Light", ru: "Лёгкий" },
+  weight400: { en: "Regular", ru: "Обычный" },
+  weight500: { en: "Medium", ru: "Средний" },
+  weight600: { en: "Semi Bold", ru: "Полужирный" },
+  weight700: { en: "Bold", ru: "Жирный" },
+  weight800: { en: "Extra Bold", ru: "Сверхжирный" },
+  weight900: { en: "Black", ru: "Чёрный" },
 };

@@ -11,7 +11,9 @@ interface LangContextValue {
 const LangContext = createContext<LangContextValue | null>(null);
 
 export function LangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Lang>("ru");
+  const [lang, setLang] = useState<Lang>(() =>
+    navigator.language?.startsWith("ru") ? "ru" : "en",
+  );
 
   const toggle = useCallback(() => {
     setLang((l) => (l === "en" ? "ru" : "en"));

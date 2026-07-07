@@ -27,6 +27,8 @@ import {
   Maximize2,
   Square,
   Layers,
+  Type,
+  Trash2,
 } from "lucide-react";
 
 function useTheme() {
@@ -52,6 +54,57 @@ interface ShadowSettings {
   opacity: number;
 }
 
+interface TextOverlay {
+  id: string;
+  text: string;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight: number;
+  fontStyle: "normal" | "italic";
+  color: string;
+  rotation: number;
+  x: number;
+  y: number;
+  textShadowEnabled: boolean;
+  shadowColor: string;
+  shadowOpacity: number;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+}
+
+type DragState =
+  | {
+      mode: "move";
+      textId: string;
+      startX: number; startY: number;
+      textStartX: number; textStartY: number;
+      convSx: number; convSy: number;
+      dsx: number; dsy: number;
+      el: HTMLElement;
+      shiftOriginX?: number;
+      shiftOriginY?: number;
+      shiftAxis?: "x" | "y";
+    }
+  | {
+      mode: "resize";
+      textId: string;
+      handleName: string;
+      startX: number; startY: number;
+      startFontSize: number;
+      el: HTMLElement;
+      dsx: number;
+      startElH: number; startElW: number;
+    }
+  | {
+      mode: "rotate";
+      textId: string;
+      startRotation: number;
+      startAngleDeg: number;
+      el: HTMLElement;
+    }
+  | null;
+
 interface StyleSettings {
   bgType: "solid" | "gradient" | "transparent";
   bgColor: string;
@@ -71,6 +124,7 @@ interface StyleSettings {
 interface Snapshot {
   image: string | null;
   settings: StyleSettings;
+  texts: TextOverlay[];
 }
 
 const DEFAULT_SETTINGS: StyleSettings = {
@@ -94,6 +148,11 @@ function hexToRgb(hex: string) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return { r, g, b };
+}
+
+function shadowRgba(color: string, opacity: number) {
+  const { r, g, b } = hexToRgb(color);
+  return `rgba(${r},${g},${b},${opacity / 100})`;
 }
 
 function getGradientCoords(bw: number, bh: number, angleDeg: number) {
@@ -149,23 +208,35 @@ export default function App() {
   const undoStack = useRef<Snapshot[]>([]);
   const redoStack = useRef<Snapshot[]>([]);
   const saveState = () => {
-    undoStack.current.push({ image, settings });
+    undoStack.current.push({ image, settings, texts });
     redoStack.current = [];
   };
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const imageBitmapRef = useRef<ImageBitmap | null>(null);
   const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [bitmapVersion, setBitmapVersion] = useState(0);
+  const textIdCounter = useRef(0);
+  const [textMode, setTextMode] = useState(false);
+  const [texts, setTexts] = useState<TextOverlay[]>([]);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const textsRef = useRef<TextOverlay[]>([]);
+  const selectedTextIdRef = useRef<string | null>(null);
+  textsRef.current = texts;
+  selectedTextIdRef.current = selectedTextId;
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({
     background: true,
     layout: true,
     corners: true,
     shadow: true,
+    text: true,
   });
   const toggleSection = (id: string) =>
     setSectionsOpen((s) => ({ ...s, [id]: !s[id] }));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewImgRef = useRef<HTMLImageElement>(null);
+  const [previewImgSize, setPreviewImgSize] = useState<{ w: number; h: number } | null>(null);
+  const dragRef = useRef<DragState>(null);
 
   // Render preview — reactive, batched per frame
   const renderVersion = useRef(0);
@@ -177,12 +248,250 @@ export default function App() {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(async () => {
       const c = document.createElement("canvas");
-      await renderToCanvas(c, 0.5);
+      await renderToCanvas(c, 0.5, !textMode);
       if (version !== renderVersion.current) return;
       setPreviewUrl(c.toDataURL("image/png"));
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [image, settings, bitmapVersion]);
+  }, [image, settings, bitmapVersion, texts, textMode]);
+
+  // Track preview image display size for text overlay positioning
+  useEffect(() => {
+    if (!previewUrl || !previewImgRef.current) { setPreviewImgSize(null); return; }
+    const img = previewImgRef.current;
+    let raf = 0;
+    const update = () => {
+      const w = img.clientWidth;
+      const h = img.clientHeight;
+      if (w > 0 && h > 0) {
+        setPreviewImgSize({ w, h });
+      }
+    };
+    const onLoad = () => requestAnimationFrame(update);
+    if (img.complete) update();
+    img.addEventListener("load", onLoad);
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
+    });
+    observer.observe(img);
+    window.addEventListener("resize", update);
+    return () => {
+      img.removeEventListener("load", onLoad);
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      cancelAnimationFrame(raf);
+    };
+  }, [previewUrl]);
+
+  const getScaleFromPreview = useCallback(() => {
+    const bw = settings.bgWidth;
+    const bh = settings.bgHeight;
+    if (!bw || !bh) return { sx: 1, sy: 1, dsx: 1, dsy: 1 };
+    const sX = bw * 0.5;
+    const sY = bh * 0.5;
+    if (previewImgSize) {
+      const dsx = previewImgSize.w / sX;
+      const dsy = previewImgSize.h / sY;
+      return { sx: bw / previewImgSize.w, sy: bh / previewImgSize.h, dsx, dsy };
+    }
+    const c = previewContainerRef.current;
+    const fw = c ? Math.min(c.clientWidth, sX) : sX;
+    const fh = c ? Math.min(c.clientHeight, sY) : sY;
+    return { sx: bw / fw, sy: bh / fh, dsx: fw / sX, dsy: fh / sY };
+  }, [previewImgSize, settings.bgWidth, settings.bgHeight]);
+
+  const addText = useCallback(() => {
+    saveState();
+    const id = `t${++textIdCounter.current}`;
+    const newText: TextOverlay = {
+      id,
+      text: "Text",
+      fontSize: 56,
+      fontFamily: "Inter",
+      fontWeight: 700,
+      fontStyle: "normal",
+      color: "#FFFFFF",
+      rotation: 0,
+      textShadowEnabled: false,
+      shadowColor: "#000000",
+      shadowOpacity: 30,
+      shadowBlur: 8,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+      x: settings.bgWidth / 2,
+      y: settings.bgHeight / 2,
+    };
+    setTexts((t) => [...t, newText]);
+    setSelectedTextId(id);
+  }, [settings.bgWidth, settings.bgHeight, saveState]);
+
+  const updateText = useCallback(
+    (id: string, patch: Partial<TextOverlay>) =>
+      setTexts((t) => t.map((x) => (x.id === id ? { ...x, ...patch } : x))),
+    [],
+  );
+
+  const deleteText = useCallback((id: string) => {
+    saveState();
+    setTexts((t) => t.filter((x) => x.id !== id));
+    setSelectedTextId(null);
+  }, [saveState]);
+
+  const selectText = useCallback((id: string | null) => {
+    setSelectedTextId(id);
+  }, []);
+
+  const handleTextPointerDown = useCallback(
+    (e: React.PointerEvent, textId: string) => {
+      e.stopPropagation();
+      selectText(textId);
+      const text = textsRef.current.find((t) => t.id === textId);
+      if (!text) return;
+      saveState();
+      const { sx, sy, dsx, dsy } = getScaleFromPreview();
+      const el = e.currentTarget as HTMLElement;
+      dragRef.current = {
+        mode: "move",
+        textId,
+        startX: e.clientX,
+        startY: e.clientY,
+        textStartX: text.x,
+        textStartY: text.y,
+        convSx: sx, convSy: sy,
+        dsx, dsy,
+        el,
+      };
+      el.setPointerCapture(e.pointerId);
+    },
+    [selectText, saveState, getScaleFromPreview],
+  );
+
+  const handleTextResizeDown = useCallback(
+    (e: React.PointerEvent, textId: string, handleName: string) => {
+      e.stopPropagation();
+      selectText(textId);
+      const text = textsRef.current.find((t) => t.id === textId);
+      if (!text) return;
+      saveState();
+      const el = e.currentTarget as HTMLElement;
+      if (handleName === "rotate") {
+        const wrapperRect = el.parentElement!.getBoundingClientRect();
+        const cx = wrapperRect.left + parseFloat(el.style.left);
+        const cy = wrapperRect.top + parseFloat(el.style.top);
+        const startAngleDeg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
+        dragRef.current = { mode: "rotate", textId, startRotation: text.rotation, startAngleDeg, el };
+      } else {
+        const { dsx } = getScaleFromPreview();
+        const rect = el.getBoundingClientRect();
+        dragRef.current = { mode: "resize", textId, handleName, startX: e.clientX, startY: e.clientY, startFontSize: text.fontSize, el, dsx, startElH: rect.height, startElW: rect.width };
+      }
+      el.setPointerCapture(e.pointerId);
+    },
+    [selectText, saveState, getScaleFromPreview],
+  );
+
+  const handleTextPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragRef.current) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const d = dragRef.current;
+      if (d.mode === "move") {
+        const dx = e.clientX - d.startX;
+        const dy = e.clientY - d.startY;
+        if (e.shiftKey) {
+          if (!d.shiftAxis) {
+            d.shiftAxis = Math.abs(dx * d.convSx) > Math.abs(dy * d.convSy) ? "x" : "y";
+            d.shiftOriginX = d.textStartX + dx * d.convSx;
+            d.shiftOriginY = d.textStartY + dy * d.convSy;
+          }
+          if (d.shiftAxis === "x") {
+            const newX = Math.round(d.textStartX + dx * d.convSx);
+            const newY = Math.round(d.shiftOriginY!);
+            d.el.style.left = (newX * 0.5 * d.dsx) + 'px';
+            d.el.style.top = (newY * 0.5 * d.dsy) + 'px';
+          } else {
+            const newY = Math.round(d.textStartY + dy * d.convSy);
+            const newX = Math.round(d.shiftOriginX!);
+            d.el.style.left = (newX * 0.5 * d.dsx) + 'px';
+            d.el.style.top = (newY * 0.5 * d.dsy) + 'px';
+          }
+        } else {
+          d.shiftAxis = undefined;
+          const newX = Math.round(d.textStartX + dx * d.convSx);
+          const newY = Math.round(d.textStartY + dy * d.convSy);
+          d.el.style.left = (newX * 0.5 * d.dsx) + 'px';
+          d.el.style.top = (newY * 0.5 * d.dsy) + 'px';
+        }
+      } else if (d.mode === "resize") {
+        const h = d.handleName;
+        const dx = e.clientX - d.startX;
+        const dy = e.clientY - d.startY;
+        const hScale = (h === "s" || h === "se" || h === "sw") ? (d.startElH + dy) / d.startElH
+                     : (d.startElH - dy) / d.startElH;
+        const wScale = (h === "e" || h === "ne" || h === "se") ? (d.startElW + dx) / d.startElW
+                     : (d.startElW - dx) / d.startElW;
+        const scaleV = (h === "n" || h === "s") ? hScale
+                     : (h === "e" || h === "w") ? wScale
+                     : Math.min(hScale, wScale);
+        const newFs = Math.max(8, Math.min(400, Math.round(d.startFontSize * scaleV)));
+        d.el.style.fontSize = (newFs * 0.5 * d.dsx) + 'px';
+      } else {
+        const wrapperRect = d.el.parentElement!.getBoundingClientRect();
+        const cx = wrapperRect.left + parseFloat(d.el.style.left);
+        const cy = wrapperRect.top + parseFloat(d.el.style.top);
+        const angleDeg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
+        const rawRotation = ((d.startRotation + angleDeg - d.startAngleDeg) % 360 + 360) % 360;
+        const newRotation = e.shiftKey ? Math.round(rawRotation / 45) * 45 : rawRotation;
+        d.el.style.transform = `translate(-50%, -50%) rotate(${newRotation}deg)`;
+      }
+    },
+    [],
+  );
+
+  const handleTextPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragRef.current) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const d = dragRef.current;
+      if (d.mode === "move") {
+        const dx = e.clientX - d.startX;
+        const dy = e.clientY - d.startY;
+        if (d.shiftAxis === "x") {
+          updateText(d.textId, { x: Math.round(d.textStartX + dx * d.convSx), y: Math.round(d.shiftOriginY!) });
+        } else if (d.shiftAxis === "y") {
+          updateText(d.textId, { x: Math.round(d.shiftOriginX!), y: Math.round(d.textStartY + dy * d.convSy) });
+        } else {
+          updateText(d.textId, { x: Math.round(d.textStartX + dx * d.convSx), y: Math.round(d.textStartY + dy * d.convSy) });
+        }
+      } else if (d.mode === "resize") {
+        const dx = e.clientX - d.startX;
+        const dy = e.clientY - d.startY;
+        const hScale = (d.handleName === "s" || d.handleName === "se" || d.handleName === "sw") ? (d.startElH + dy) / d.startElH
+                     : (d.startElH - dy) / d.startElH;
+        const wScale = (d.handleName === "e" || d.handleName === "ne" || d.handleName === "se") ? (d.startElW + dx) / d.startElW
+                     : (d.startElW - dx) / d.startElW;
+        const scaleV = (d.handleName === "n" || d.handleName === "s") ? hScale
+                     : (d.handleName === "e" || d.handleName === "w") ? wScale
+                     : Math.min(hScale, wScale);
+        const newFs = Math.max(8, Math.min(400, Math.round(d.startFontSize * scaleV)));
+        updateText(d.textId, { fontSize: newFs });
+      } else {
+        const wrapperRect = d.el.parentElement!.getBoundingClientRect();
+        const cx = wrapperRect.left + parseFloat(d.el.style.left);
+        const cy = wrapperRect.top + parseFloat(d.el.style.top);
+        const angleDeg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
+        const rawRotation = ((d.startRotation + angleDeg - d.startAngleDeg) % 360 + 360) % 360;
+        const finalRotation = e.shiftKey ? Math.round(rawRotation / 45) * 45 : rawRotation;
+        updateText(d.textId, { rotation: Math.round(finalRotation) });
+      }
+      dragRef.current = null;
+      (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+    },
+    [updateText],
+  );
 
   // Pre-decode image to ImageBitmap for zero-decode re-renders
   useEffect(() => {
@@ -241,8 +550,8 @@ export default function App() {
 
   // Render styled image to canvas
   const renderToCanvas = useCallback(
-    (canvas: HTMLCanvasElement, scale = 1) => {
-      return new Promise<void>((resolve) => {
+    (canvas: HTMLCanvasElement, scale = 1, renderTexts = true) => {
+      return new Promise<void>(async (resolve) => {
         if (!image || !imageBitmapRef.current) { resolve(); return; }
         const bitmap = imageBitmapRef.current;
         const sw = settings.shadow;
@@ -316,6 +625,33 @@ export default function App() {
         }
 
         ctx.restore();
+
+        if (renderTexts) {
+          await document.fonts.ready;
+          const st = textsRef.current;
+          for (const t of st) {
+            ctx.save();
+            const tx = t.x * scale;
+            const ty = t.y * scale;
+            const tfs = t.fontSize * scale;
+            ctx.translate(tx, ty);
+            ctx.rotate((t.rotation * Math.PI) / 180);
+            ctx.font = `${t.fontStyle === "italic" ? "italic " : ""}${t.fontWeight !== 400 ? t.fontWeight + " " : ""}${tfs}px "${t.fontFamily}"`;
+            ctx.fillStyle = t.color;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            if (t.textShadowEnabled) {
+              const { r: sr, g: sg, b: sb } = hexToRgb(t.shadowColor);
+              ctx.shadowColor = `rgba(${sr},${sg},${sb},${t.shadowOpacity / 100})`;
+              ctx.shadowBlur = t.shadowBlur * scale;
+              ctx.shadowOffsetX = t.shadowOffsetX * scale;
+              ctx.shadowOffsetY = t.shadowOffsetY * scale;
+            }
+            ctx.fillText(t.text, 0, 0);
+            ctx.restore();
+          }
+        }
+
         resolve();
       });
     },
@@ -364,18 +700,22 @@ export default function App() {
   const handleUndo = useCallback(() => {
     if (undoStack.current.length === 0) return;
     const prev = undoStack.current.pop()!;
-    redoStack.current.push({ image: imageRef.current, settings: settingsRef.current });
+    redoStack.current.push({ image: imageRef.current, settings: settingsRef.current, texts: textsRef.current });
     setImage(prev.image);
     setSettings(prev.settings);
+    setTexts(prev.texts);
+    setSelectedTextId(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleRedo = useCallback(() => {
     if (redoStack.current.length === 0) return;
     const next = redoStack.current.pop()!;
-    undoStack.current.push({ image: imageRef.current, settings: settingsRef.current });
+    undoStack.current.push({ image: imageRef.current, settings: settingsRef.current, texts: textsRef.current });
     setImage(next.image);
     setSettings(next.settings);
+    setTexts(next.texts);
+    setSelectedTextId(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -400,6 +740,7 @@ export default function App() {
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
       const file = e.dataTransfer.files[0];
       if (file) handleFile(file);
     },
@@ -417,8 +758,11 @@ export default function App() {
     setImage(null);
     setPreviewUrl(null);
     setCropMode(false);
+    setTextMode(false);
     setCrop(undefined);
     setCompletedCrop(undefined);
+    setTexts([]);
+    setSelectedTextId(null);
   };
 
   const handleDownloadFormat = useCallback(async (format: "png" | "jpeg" | "webp") => {
@@ -494,10 +838,11 @@ export default function App() {
   }, [image, completedCrop, settings]);
 
   const toggleCropMode = useCallback(() => {
+    if (textMode) return;
     setCrop(undefined);
     setCompletedCrop(undefined);
     setCropMode((v) => !v);
-  }, []);
+  }, [textMode]);
 
   return (
     <div
@@ -581,6 +926,27 @@ export default function App() {
                   <Crop className="w-3 h-3" />
                   <span className="hidden sm:inline">{t("cropImage")}</span>
                 </button>
+                <button
+                  onClick={() => {
+                    if (!textMode) {
+                      setCropMode(false);
+                      setTextMode(true);
+                      addText();
+                    } else {
+                      setTextMode(false);
+                      setSelectedTextId(null);
+                    }
+                  }}
+                  disabled={!image}
+                  className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer ${
+                    textMode
+                      ? "bg-[#49c5b6] text-white"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Type className="w-3 h-3" />
+                  <span className="hidden sm:inline">{t("addText")}</span>
+                </button>
                 <div className="w-px h-4 bg-border mx-0.5" />
                 <button
                   onClick={handleUndo}
@@ -620,6 +986,17 @@ export default function App() {
                     </button>
                   </div>
                 )}
+                {textMode && selectedTextId && (
+                  <div className="flex items-center gap-1 ml-auto">
+                    <button
+                      onClick={() => deleteText(selectedTextId)}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 border border-border hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      {t("deleteText")}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Preview with dropzone */}
@@ -634,6 +1011,7 @@ export default function App() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={onDrop}
+                onPointerDown={() => { if (textMode) selectText(null); }}
               >
                 {!image && (
                   <label
@@ -688,17 +1066,109 @@ export default function App() {
                         onClick={(e) => { e.stopPropagation(); clearImage(); }}
                         aria-label="Remove image"
                         title={t("remove")}
-                        className="absolute top-0 right-0 z-10 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-red-500 hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer"
+                        className="absolute top-0 right-0 z-30 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg border border-border bg-background/80 backdrop-blur-sm text-muted-foreground hover:text-red-500 hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer"
                         style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}
                       >
                         <X className="w-3 h-3 sm:w-4 sm:h-4" />
                       </button>
                     )}
-                    <img
-                      src={previewUrl}
-                      alt={t("styledPreview")}
-                      className="relative z-0 max-w-full max-h-full object-contain block"
-                    />
+                    <div className="relative inline-block leading-none" style={{ maxWidth: "100%", maxHeight: "100%" }} onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                      <img
+                        ref={previewImgRef}
+                        src={previewUrl}
+                        alt={t("styledPreview")}
+                        draggable={false}
+                        className="relative z-0 select-none"
+                        style={{
+                          maxWidth: "100%",
+                          maxHeight: "100%",
+                          objectFit: "contain",
+                          display: "block",
+                        }}
+                      />
+                      {textMode &&
+                        texts.map((t) => {
+                          const fallbackW = previewContainerRef.current?.clientWidth
+                            ? Math.min(previewContainerRef.current.clientWidth, settings.bgWidth * 0.5)
+                            : settings.bgWidth * 0.5;
+                          const fallbackH = previewContainerRef.current?.clientHeight
+                            ? Math.min(previewContainerRef.current.clientHeight, settings.bgHeight * 0.5)
+                            : settings.bgHeight * 0.5;
+                          const sX = settings.bgWidth * 0.5;
+                          const sY = settings.bgHeight * 0.5;
+                          const sx = previewImgSize ? previewImgSize.w / sX : fallbackW / sX;
+                          const sy = previewImgSize ? previewImgSize.h / sY : fallbackH / sY;
+                          const domX = t.x * 0.5 * sx;
+                          const domY = t.y * 0.5 * sy;
+                          const domFs = t.fontSize * 0.5 * sx;
+                          const isSelected = t.id === selectedTextId;
+                          return (
+                            <div
+                              key={t.id}
+                              className="absolute cursor-pointer select-none whitespace-pre leading-none"
+                              draggable={false}
+                              onDragStart={(e) => e.preventDefault()}
+                              style={{
+                                left: domX,
+                                top: domY,
+                                transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
+                                fontSize: domFs,
+                                fontFamily: `"${t.fontFamily}", sans-serif`,
+                                fontWeight: t.fontWeight,
+                                fontStyle: t.fontStyle,
+                                color: t.color,
+                                textShadow: isSelected
+                                  ? t.textShadowEnabled
+                                    ? `0 0 4px rgba(73,197,182,0.8), ${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
+                                    : "0 0 4px rgba(73,197,182,0.8)"
+                                  : t.textShadowEnabled
+                                    ? `${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
+                                    : "none",
+                                border: isSelected ? "1px dashed rgba(73,197,182,0.7)" : "1px solid transparent",
+                                padding: "2px 4px",
+                                borderRadius: 4,
+                                zIndex: isSelected ? 20 : 10,
+                                touchAction: "none",
+                              }}
+                              onPointerDown={(e) => {
+                                const handle = (e.target as HTMLElement).dataset.handle;
+                                if (handle) { handleTextResizeDown(e, t.id, handle); }
+                                else { handleTextPointerDown(e, t.id); }
+                              }}
+                              onPointerMove={handleTextPointerMove}
+                              onPointerUp={handleTextPointerUp}
+                              onClick={(e) => { e.stopPropagation(); selectText(t.id); }}
+                            >
+                              {t.text}
+                              {isSelected && (() => {
+                                const hStyle: React.CSSProperties = {
+                                  position: "absolute",
+                                  width: 8,
+                                  height: 8,
+                                  background: "#fff",
+                                  border: "2px solid #49c5b6",
+                                  borderRadius: 2,
+                                  zIndex: 25,
+                                  touchAction: "none",
+                                };
+                                return (
+                                  <>
+                                    <div data-handle="nw" style={{ ...hStyle, top: -5, left: -5, cursor: "nwse-resize" }} />
+                                    <div data-handle="ne" style={{ ...hStyle, top: -5, right: -5, cursor: "nesw-resize" }} />
+                                    <div data-handle="sw" style={{ ...hStyle, bottom: -5, left: -5, cursor: "nesw-resize" }} />
+                                    <div data-handle="se" style={{ ...hStyle, bottom: -5, right: -5, cursor: "nwse-resize" }} />
+                                    <div data-handle="n" style={{ ...hStyle, top: -5, left: "50%", marginLeft: -4, cursor: "ns-resize" }} />
+                                    <div data-handle="s" style={{ ...hStyle, bottom: -5, left: "50%", marginLeft: -4, cursor: "ns-resize" }} />
+                                    <div data-handle="e" style={{ ...hStyle, right: -5, top: "50%", marginTop: -4, cursor: "ew-resize" }} />
+                                    <div data-handle="w" style={{ ...hStyle, left: -5, top: "50%", marginTop: -4, cursor: "ew-resize" }} />
+                                    <div data-handle="rotate" style={{ position: "absolute", width: 14, height: 14, borderRadius: "50%", background: "#fff", border: "2px solid #49c5b6", zIndex: 26, top: -24, right: -24, cursor: ROTATE_CURSOR, touchAction: "none" }} />
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -760,6 +1230,12 @@ export default function App() {
               updateShadow={updateShadow}
               t={t}
               handleReset={handleReset}
+              texts={texts}
+              selectedTextId={selectedTextId}
+              addText={addText}
+              updateText={updateText}
+              deleteText={deleteText}
+              selectText={selectText}
             />
           </div>
         ) : (
@@ -887,6 +1363,25 @@ export default function App() {
                 <ShadowSettings settings={settings} update={update} updateShadow={updateShadow} t={t} />
                 </CollapsibleSection>
 
+                <SettingsDivider />
+
+                <CollapsibleSection
+                  id="text"
+                  label={t("textSettings")}
+                  isOpen={sectionsOpen.text}
+                  onToggle={toggleSection}
+                >
+                <TextSettingsPanel
+                  texts={texts}
+                  selectedTextId={selectedTextId}
+                  addText={addText}
+                  updateText={updateText}
+                  deleteText={deleteText}
+                  selectText={selectText}
+                  t={t}
+                />
+                </CollapsibleSection>
+
                 {/* Reset */}
                 <button
                   onClick={handleReset}
@@ -915,6 +1410,27 @@ export default function App() {
                 >
                   <Crop className="w-3.5 h-3.5" />
                   {t("cropImage")}
+                </button>
+                <button
+                  onClick={() => {
+                    if (!textMode) {
+                      setCropMode(false);
+                      setTextMode(true);
+                      addText();
+                    } else {
+                      setTextMode(false);
+                      setSelectedTextId(null);
+                    }
+                  }}
+                  disabled={!image}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer ${
+                    textMode
+                      ? "bg-[#49c5b6] text-white"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <Type className="w-3.5 h-3.5" />
+                  {t("addText")}
                 </button>
                 <div className="w-px h-5 bg-border mx-1.5" />
                 <button
@@ -955,6 +1471,17 @@ export default function App() {
                     </button>
                   </div>
                 )}
+                {textMode && selectedTextId && (
+                  <div className="flex items-center gap-1 ml-auto">
+                    <button
+                      onClick={() => deleteText(selectedTextId)}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 border border-border hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {t("deleteText")}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Preview area */}
@@ -969,6 +1496,7 @@ export default function App() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={onDrop}
+                onPointerDown={() => { if (textMode) selectText(null); }}
               >
                 {cropMode && cropPreviewSrc ? (
                   <div className="absolute inset-[32px] grid place-items-center" style={{ gridTemplateRows: "1fr", gridTemplateColumns: "1fr" }}>
@@ -987,17 +1515,102 @@ export default function App() {
                     </ReactCrop>
                   </div>
                 ) : previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt={t("styledPreview")}
-                    className="relative z-0"
-                    style={{
-                      maxWidth: "100%",
-                      maxHeight: "100%",
-                      objectFit: "contain",
-                      display: "block",
-                    }}
-                  />
+                  <div className="relative inline-block leading-none" style={{ maxWidth: "100%", maxHeight: "100%" }} onDragStart={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                    <img
+                      ref={previewImgRef}
+                      src={previewUrl}
+                      alt={t("styledPreview")}
+                      draggable={false}
+                      className="relative z-0 select-none"
+                      style={{
+                        maxWidth: "100%",
+                        maxHeight: "100%",
+                        objectFit: "contain",
+                        display: "block",
+                      }}
+                    />
+                    {textMode &&
+                      texts.map((t) => {
+                        const fallbackW = previewContainerRef.current?.clientWidth
+                          ? Math.min(previewContainerRef.current.clientWidth, settings.bgWidth * 0.5)
+                          : settings.bgWidth * 0.5;
+                        const fallbackH = previewContainerRef.current?.clientHeight
+                          ? Math.min(previewContainerRef.current.clientHeight, settings.bgHeight * 0.5)
+                          : settings.bgHeight * 0.5;
+                        const sX = settings.bgWidth * 0.5;
+                        const sY = settings.bgHeight * 0.5;
+                        const sx = previewImgSize ? previewImgSize.w / sX : fallbackW / sX;
+                        const sy = previewImgSize ? previewImgSize.h / sY : fallbackH / sY;
+                        const domX = t.x * 0.5 * sx;
+                        const domY = t.y * 0.5 * sy;
+                        const domFs = t.fontSize * 0.5 * sx;
+                        const isSelected = t.id === selectedTextId;
+                        return (
+                          <div
+                            key={t.id}
+                            className="absolute cursor-pointer select-none whitespace-pre leading-none"
+                            draggable={false}
+                            onDragStart={(e) => e.preventDefault()}
+                            style={{
+                              left: domX,
+                              top: domY,
+                              transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
+                              fontSize: domFs,
+                              fontFamily: `"${t.fontFamily}", sans-serif`,
+                              fontWeight: t.fontWeight,
+                              fontStyle: t.fontStyle,
+                              color: t.color,
+                              textShadow: isSelected
+                                ? t.textShadowEnabled
+                                  ? `0 0 4px rgba(73,197,182,0.8), ${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${t.shadowColor}`
+                                  : "0 0 4px rgba(73,197,182,0.8)"
+                                : t.textShadowEnabled
+                                  ? `${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${t.shadowColor}`
+                                  : "none",
+                              border: isSelected ? "1px dashed rgba(73,197,182,0.7)" : "1px solid transparent",
+                              padding: "2px 4px",
+                              borderRadius: 4,
+                              zIndex: isSelected ? 20 : 10,
+                            }}
+                            onPointerDown={(e) => {
+                              const handle = (e.target as HTMLElement).dataset.handle;
+                              if (handle) { handleTextResizeDown(e, t.id, handle); }
+                              else { handleTextPointerDown(e, t.id); }
+                            }}
+                            onPointerMove={handleTextPointerMove}
+                            onPointerUp={handleTextPointerUp}
+                            onClick={(e) => { e.stopPropagation(); selectText(t.id); }}
+                          >
+                            {t.text}
+                            {isSelected && (() => {
+                              const hStyle: React.CSSProperties = {
+                                position: "absolute",
+                                width: 8,
+                                height: 8,
+                                background: "#fff",
+                                border: "2px solid #49c5b6",
+                                borderRadius: 2,
+                                zIndex: 25,
+                                touchAction: "none",
+                              };
+                              return (
+                                <>
+                                   <div data-handle="nw" style={{ ...hStyle, top: -5, left: -5, cursor: "nwse-resize" }} />
+                                   <div data-handle="ne" style={{ ...hStyle, top: -5, right: -5, cursor: "nesw-resize" }} />
+                                   <div data-handle="sw" style={{ ...hStyle, bottom: -5, left: -5, cursor: "nesw-resize" }} />
+                                   <div data-handle="se" style={{ ...hStyle, bottom: -5, right: -5, cursor: "nwse-resize" }} />
+                                  <div data-handle="n" style={{ ...hStyle, top: -5, left: "50%", marginLeft: -4, cursor: "ns-resize" }} />
+                                  <div data-handle="s" style={{ ...hStyle, bottom: -5, left: "50%", marginLeft: -4, cursor: "ns-resize" }} />
+                                  <div data-handle="e" style={{ ...hStyle, right: -5, top: "50%", marginTop: -4, cursor: "ew-resize" }} />
+                                  <div data-handle="w" style={{ ...hStyle, left: -5, top: "50%", marginTop: -4, cursor: "ew-resize" }} />
+                                  <div data-handle="rotate" style={{ position: "absolute", width: 14, height: 14, borderRadius: "50%", background: "#fff", border: "2px solid #49c5b6", zIndex: 26, top: -24, right: -24, cursor: ROTATE_CURSOR, touchAction: "none" }} />
+                                </>
+                              );
+                            })()}
+                          </div>
+                        );
+                      })}
+                  </div>
                 ) : (
                   <EmptyState />
                 )}
@@ -1697,7 +2310,7 @@ function ShadowSettings({
             <span className={`w-3.5 h-3.5 rounded-full bg-white transition-transform duration-200 ${settings.shadowEnabled ? "translate-x-[18px]" : "translate-x-0"}`} />
           </span>
         </label>
-        <span className="text-xs text-muted-foreground select-none">{settings.shadowEnabled ? "On" : "Off"}</span>
+        <span className="text-xs text-muted-foreground select-none">{settings.shadowEnabled ? t("on") : t("off")}</span>
       </div>
       {settings.shadowEnabled && (
         <>
@@ -1732,15 +2345,217 @@ function ShadowSettings({
   );
 }
 
+const FONT_OPTIONS = [
+  "Arial", "Bebas Neue", "Courier New", "DM Sans", "Fira Code",
+  "Georgia", "Impact", "Inter", "Lato", "Montserrat",
+  "Nunito", "Open Sans", "Playfair Display", "Poppins", "Roboto",
+  "Space Grotesk", "Times New Roman", "Trebuchet MS", "Ubuntu",
+  "Verdana", "system-ui",
+];
+
+const FONT_WEIGHTS: Record<string, number[]> = {
+  "Inter": [400, 500, 600, 700],
+  "Open Sans": [400, 700],
+  "Lato": [400, 700],
+  "Roboto": [400, 500, 700],
+  "Montserrat": [400, 500, 600, 700],
+  "Nunito": [400, 700],
+  "Poppins": [400, 700],
+  "Ubuntu": [400, 700],
+  "Playfair Display": [400, 700],
+  "Fira Code": [400, 700],
+  "Space Grotesk": [400, 700],
+  "DM Sans": [400, 700],
+  "Bebas Neue": [400],
+  "Arial": [400, 700],
+  "Verdana": [400, 700],
+  "Georgia": [400, 700],
+  "Times New Roman": [400, 700],
+  "Courier New": [400, 700],
+  "Impact": [400],
+  "Trebuchet MS": [400, 700],
+  "system-ui": [400, 700],
+};
+
+const ROTATE_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%2349c5b6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'/%3E%3Cpath d='M3 3v5h5'/%3E%3C/svg%3E") 12 12, grab`;
+
+function TextSettingsPanel({
+  texts,
+  selectedTextId,
+  addText,
+  updateText,
+  deleteText,
+  selectText,
+  t,
+}: {
+  texts: TextOverlay[];
+  selectedTextId: string | null;
+  addText: () => void;
+  updateText: (id: string, patch: Partial<TextOverlay>) => void;
+  deleteText: (id: string) => void;
+  selectText: (id: string | null) => void;
+  t: (key: StringKey) => string;
+}) {
+  const selected = texts.find((x) => x.id === selectedTextId) ?? null;
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (selected) {
+      textareaRef.current?.focus();
+      textareaRef.current?.select();
+    }
+  }, [selected?.id]);
+  return (
+    <div className="flex flex-col gap-4">
+      {texts.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {texts.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => selectText(t.id)}
+              className={`px-2.5 py-1 text-xs rounded-md transition-all duration-150 border cursor-pointer active:scale-[0.96] ${
+                t.id === selectedTextId
+                  ? "bg-[#49c5b6] text-white border-[#49c5b6]"
+                  : "bg-muted text-muted-foreground border-border hover:border-[#49c5b6]/50"
+              }`}
+            >
+              {t.text.slice(0, 12) || "..."}
+            </button>
+          ))}
+        </div>
+      )}
+      {selected && (
+        <div className="flex flex-col gap-4">
+          <ControlRow label={t("enterText")}>
+            <textarea
+              ref={textareaRef}
+              value={selected.text}
+              onChange={(e) => updateText(selected.id, { text: e.target.value })}
+              rows={2}
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground resize-none"
+            />
+          </ControlRow>
+          <ControlRow label={t("fontFamily")}>
+            <select
+              value={selected.fontFamily}
+              onChange={(e) => updateText(selected.id, { fontFamily: e.target.value })}
+              className="w-full h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground cursor-pointer"
+            >
+              {FONT_OPTIONS.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </ControlRow>
+          <ControlRow label={t("weight")}>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={selected.fontWeight}
+                onChange={(e) => updateText(selected.id, { fontWeight: Number(e.target.value) })}
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm text-foreground cursor-pointer"
+              >
+                {(FONT_WEIGHTS[selected.fontFamily] ?? [400, 700]).map((w) => {
+                  const key = `weight${w}` as StringKey;
+                  return <option key={w} value={w}>{w} {t(key)}</option>;
+                })}
+              </select>
+              <button
+                onClick={() => updateText(selected.id, { fontStyle: selected.fontStyle === "italic" ? "normal" : "italic" })}
+                className={`h-9 w-9 flex items-center justify-center rounded-md border text-sm font-medium transition-all duration-150 active:scale-[0.96] cursor-pointer ${
+                  selected.fontStyle === "italic"
+                    ? "bg-[#49c5b6] text-white border-[#49c5b6]"
+                    : "bg-background text-muted-foreground border-border hover:text-foreground"
+                }`}
+                title={t("italicLabel")}
+              >
+                <span className="italic font-serif text-base">I</span>
+              </button>
+            </div>
+          </ControlRow>
+          <ControlRow label={`${t("fontSizeLabel")} — ${selected.fontSize}px`}>
+            <StyledSlider
+              min={8}
+              max={400}
+              value={selected.fontSize}
+              onChange={(v) => updateText(selected.id, { fontSize: v })}
+            />
+          </ControlRow>
+          <ControlRow label={t("textColor")}>
+            <ColorPickerSketch
+              color={selected.color}
+              onChange={(c) => updateText(selected.id, { color: c })}
+              presets={PRESET_COLORS}
+            >
+              <span className="inline-flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-background hover:bg-muted shadow-sm cursor-pointer transition-colors duration-150">
+                <span className="w-4 h-4 rounded-sm shrink-0" style={{ background: selected.color }} />
+                <span className="text-xs font-mono tabular-nums text-muted-foreground">{selected.color}</span>
+              </span>
+            </ColorPickerSketch>
+          </ControlRow>
+          <ControlRow label={`${t("rotation")} — ${selected.rotation}°`}>
+            <StyledSlider
+              min={0}
+              max={360}
+              value={selected.rotation}
+              onChange={(v) => updateText(selected.id, { rotation: v })}
+            />
+          </ControlRow>
+          <ControlRow label={t("shadow")}>
+            <div className="flex items-center gap-3 pl-0.5">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" checked={selected.textShadowEnabled} onChange={(e) => updateText(selected.id, { textShadowEnabled: e.target.checked })} className="sr-only" />
+                <span className={`w-9 h-5 rounded-full transition-colors duration-200 flex items-center px-0.5 ${selected.textShadowEnabled ? "bg-[#49c5b6]" : "bg-border"}`} style={selected.textShadowEnabled ? { boxShadow: "0 0 0 1px rgba(73,197,182,0.3)" } : undefined}>
+                  <span className={`w-3.5 h-3.5 rounded-full bg-white transition-transform duration-200 ${selected.textShadowEnabled ? "translate-x-[18px]" : "translate-x-0"}`} />
+                </span>
+              </label>
+              <span className="text-xs text-muted-foreground select-none">{selected.textShadowEnabled ? t("on") : t("off")}</span>
+            </div>
+          </ControlRow>
+          {selected.textShadowEnabled && (
+            <>
+              <ControlRow label={`${t("offsetX")} — ${selected.shadowOffsetX}px`}>
+                <StyledSlider min={-40} max={40} value={selected.shadowOffsetX} onChange={(v) => updateText(selected.id, { shadowOffsetX: v })} />
+              </ControlRow>
+              <ControlRow label={`${t("offsetY")} — ${selected.shadowOffsetY}px`}>
+                <StyledSlider min={-40} max={40} value={selected.shadowOffsetY} onChange={(v) => updateText(selected.id, { shadowOffsetY: v })} />
+              </ControlRow>
+              <ControlRow label={`${t("blur")} — ${selected.shadowBlur}px`}>
+                <StyledSlider min={0} max={80} value={selected.shadowBlur} onChange={(v) => updateText(selected.id, { shadowBlur: v })} />
+              </ControlRow>
+              <ControlRow label={`${t("opacity")} — ${selected.shadowOpacity}%`}>
+                <StyledSlider min={0} max={100} value={selected.shadowOpacity} onChange={(v) => updateText(selected.id, { shadowOpacity: v })} />
+              </ControlRow>
+              <ControlRow label={t("color")}>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <ColorPickerSketch color={selected.shadowColor} onChange={(c) => updateText(selected.id, { shadowColor: c })} offsetY={55} presets={PRESET_COLORS}>
+                    <span className="flex items-center justify-center h-10 min-w-10 p-1.5 rounded-md border border-border shadow-sm cursor-pointer">
+                      <span className="w-5 h-5 rounded-sm" style={{ background: selected.shadowColor }} />
+                    </span>
+                  </ColorPickerSketch>
+                  <span className="text-xs text-muted-foreground font-mono">{selected.shadowColor}</span>
+                </label>
+              </ControlRow>
+            </>
+          )}
+        </div>
+      )}
+      {!selected && texts.length > 0 && (
+        <p className="text-xs text-muted-foreground">{t("noTextSelected")}</p>
+      )}
+    </div>
+  );
+}
+
 /* ---- Mobile bottom settings panel ---- */
 
-type TabId = "background" | "canvas" | "corners" | "shadow";
+type TabId = "background" | "canvas" | "corners" | "shadow" | "text";
 
 const TAB_CONFIG: { id: TabId; labelKey: StringKey; icon: typeof Palette }[] = [
   { id: "background", labelKey: "background", icon: Palette },
   { id: "canvas",    labelKey: "layout",     icon: Maximize2 },
   { id: "corners",   labelKey: "corners",    icon: Square },
   { id: "shadow",    labelKey: "shadow",     icon: Layers },
+  { id: "text",      labelKey: "textTab",    icon: Type },
 ];
 
 function MobileSettingsPanel({
@@ -1751,6 +2566,12 @@ function MobileSettingsPanel({
   updateShadow,
   t,
   handleReset,
+  texts,
+  selectedTextId,
+  addText,
+  updateText,
+  deleteText,
+  selectText,
 }: {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
@@ -1759,6 +2580,12 @@ function MobileSettingsPanel({
   updateShadow: (patch: Partial<ShadowSettings>) => void;
   t: (key: StringKey) => string;
   handleReset: () => void;
+  texts: TextOverlay[];
+  selectedTextId: string | null;
+  addText: () => void;
+  updateText: (id: string, patch: Partial<TextOverlay>) => void;
+  deleteText: (id: string) => void;
+  selectText: (id: string | null) => void;
 }) {
   return (
     <div
@@ -1785,6 +2612,17 @@ function MobileSettingsPanel({
             )}
             {activeTab === "shadow" && (
               <ShadowSettings settings={settings} update={update} updateShadow={updateShadow} t={t} />
+            )}
+            {activeTab === "text" && (
+              <TextSettingsPanel
+                texts={texts}
+                selectedTextId={selectedTextId}
+                addText={addText}
+                updateText={updateText}
+                deleteText={deleteText}
+                selectText={selectText}
+                t={t}
+              />
             )}
           </motion.div>
         </AnimatePresence>
