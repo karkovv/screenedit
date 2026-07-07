@@ -10,7 +10,7 @@ import { useMediaQuery } from "./useMediaQuery";
 import { Logo } from "./Logo";
 
 import {
-  Upload,
+  ImageUp,
   Download,
   Clipboard,
   RotateCcw,
@@ -216,6 +216,10 @@ export default function App() {
   const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [bitmapVersion, setBitmapVersion] = useState(0);
   const textIdCounter = useRef(0);
+  const [snap45, setSnap45] = useState(false);
+  const snap45Ref = useRef(false);
+  snap45Ref.current = snap45;
+  const toggleSnap45 = () => setSnap45((s) => !s);
   const [textMode, setTextMode] = useState(false);
   const [texts, setTexts] = useState<TextOverlay[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
@@ -443,7 +447,7 @@ export default function App() {
         const cy = wrapperRect.top + parseFloat(d.el.style.top);
         const angleDeg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
         const rawRotation = ((d.startRotation + angleDeg - d.startAngleDeg) % 360 + 360) % 360;
-        const newRotation = e.shiftKey ? Math.round(rawRotation / 45) * 45 : rawRotation;
+        const newRotation = (e.shiftKey || snap45Ref.current) ? Math.round(rawRotation / 45) * 45 : rawRotation;
         d.el.style.transform = `translate(-50%, -50%) rotate(${newRotation}deg)`;
       }
     },
@@ -484,7 +488,7 @@ export default function App() {
         const cy = wrapperRect.top + parseFloat(d.el.style.top);
         const angleDeg = (Math.atan2(e.clientY - cy, e.clientX - cx) * 180) / Math.PI;
         const rawRotation = ((d.startRotation + angleDeg - d.startAngleDeg) % 360 + 360) % 360;
-        const finalRotation = e.shiftKey ? Math.round(rawRotation / 45) * 45 : rawRotation;
+        const finalRotation = (e.shiftKey || snap45Ref.current) ? Math.round(rawRotation / 45) * 45 : rawRotation;
         updateText(d.textId, { rotation: Math.round(finalRotation) });
       }
       dragRef.current = null;
@@ -853,13 +857,25 @@ export default function App() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden flex-col bg-background text-foreground font-sans transition-colors duration-300"
+      className="flex h-dvh overflow-hidden flex-col bg-background text-foreground font-sans transition-colors duration-300"
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
       {/* Top bar */}
       <div className="flex items-center justify-between px-3 md:px-5 py-2 md:py-3 border-b border-border bg-card shrink-0">
         <Logo className="h-4 md:h-5 w-auto select-none text-foreground" />
         <div className="flex items-center gap-1 md:gap-1.5">
+          <a
+            href="https://github.com/karkovv/screenedit"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub"
+            title="GitHub"
+            className="h-8 w-8 md:h-10 md:w-10 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors active:scale-[0.96]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className="md:w-[18px] md:h-[18px]">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+          </a>
           <button
             onClick={() => setDonationOpen(true)}
             className="h-8 w-8 md:h-10 md:w-auto md:px-3 flex items-center justify-center gap-1.5 rounded-lg border border-border text-muted-foreground hover:text-[#FF2424] hover:border-red-300 transition-all duration-150 active:scale-[0.96] cursor-pointer text-xs font-medium"
@@ -1028,7 +1044,7 @@ export default function App() {
                       className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center"
                       style={{ background: "linear-gradient(135deg,#49c5b6,#2779a7)" }}
                     >
-                      <Upload className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                      <ImageUp className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
                     </div>
                     <p className="text-sm font-medium text-foreground text-center">
                       {t("dropScreenshot")}{" "}
@@ -1143,8 +1159,8 @@ export default function App() {
                               {isSelected && (() => {
                                 const hStyle: React.CSSProperties = {
                                   position: "absolute",
-                                  width: 8,
-                                  height: 8,
+                                  width: 16,
+                                  height: 16,
                                   background: "#fff",
                                   border: "2px solid #49c5b6",
                                   borderRadius: 2,
@@ -1153,15 +1169,15 @@ export default function App() {
                                 };
                                 return (
                                   <>
-                                    <div data-handle="nw" style={{ ...hStyle, top: -5, left: -5, cursor: "nwse-resize" }} />
-                                    <div data-handle="ne" style={{ ...hStyle, top: -5, right: -5, cursor: "nesw-resize" }} />
-                                    <div data-handle="sw" style={{ ...hStyle, bottom: -5, left: -5, cursor: "nesw-resize" }} />
-                                    <div data-handle="se" style={{ ...hStyle, bottom: -5, right: -5, cursor: "nwse-resize" }} />
-                                    <div data-handle="n" style={{ ...hStyle, top: -5, left: "50%", marginLeft: -4, cursor: "ns-resize" }} />
-                                    <div data-handle="s" style={{ ...hStyle, bottom: -5, left: "50%", marginLeft: -4, cursor: "ns-resize" }} />
-                                    <div data-handle="e" style={{ ...hStyle, right: -5, top: "50%", marginTop: -4, cursor: "ew-resize" }} />
-                                    <div data-handle="w" style={{ ...hStyle, left: -5, top: "50%", marginTop: -4, cursor: "ew-resize" }} />
-                                    <div data-handle="rotate" style={{ position: "absolute", width: 14, height: 14, borderRadius: "50%", background: "#fff", border: "2px solid #49c5b6", zIndex: 26, top: -24, right: -24, cursor: ROTATE_CURSOR, touchAction: "none" }} />
+                                    <div data-handle="nw" style={{ ...hStyle, top: -9, left: -9, cursor: "nwse-resize" }} />
+                                    <div data-handle="ne" style={{ ...hStyle, top: -9, right: -9, cursor: "nesw-resize" }} />
+                                    <div data-handle="sw" style={{ ...hStyle, bottom: -9, left: -9, cursor: "nesw-resize" }} />
+                                    <div data-handle="se" style={{ ...hStyle, bottom: -9, right: -9, cursor: "nwse-resize" }} />
+                                    <div data-handle="n" style={{ ...hStyle, top: -9, left: "50%", marginLeft: -8, cursor: "ns-resize" }} />
+                                    <div data-handle="s" style={{ ...hStyle, bottom: -9, left: "50%", marginLeft: -8, cursor: "ns-resize" }} />
+                                    <div data-handle="e" style={{ ...hStyle, right: -9, top: "50%", marginTop: -8, cursor: "ew-resize" }} />
+                                    <div data-handle="w" style={{ ...hStyle, left: -9, top: "50%", marginTop: -8, cursor: "ew-resize" }} />
+                                    <div data-handle="rotate" style={{ position: "absolute", width: 28, height: 28, borderRadius: "50%", background: "#fff", border: "2px solid #49c5b6", zIndex: 26, top: -38, right: -38, cursor: ROTATE_CURSOR, touchAction: "none" }} />
                                   </>
                                 );
                               })()}
@@ -1236,6 +1252,8 @@ export default function App() {
               updateText={updateText}
               deleteText={deleteText}
               selectText={selectText}
+              snap45={snap45}
+              onToggleSnap45={toggleSnap45}
             />
           </div>
         ) : (
@@ -1294,7 +1312,7 @@ export default function App() {
                     background: "linear-gradient(135deg,#49c5b6,#2779a7)",
                   }}
                 >
-                  <Upload className="w-6 h-6 text-white" />
+                  <ImageUp className="w-6 h-6 text-white" />
                 </div>
                 {image ? (
                   <div>
@@ -1378,6 +1396,8 @@ export default function App() {
                   updateText={updateText}
                   deleteText={deleteText}
                   selectText={selectText}
+                  snap45={snap45}
+                  onToggleSnap45={toggleSnap45}
                   t={t}
                 />
                 </CollapsibleSection>
@@ -2379,6 +2399,8 @@ function TextSettingsPanel({
   updateText,
   deleteText,
   selectText,
+  snap45,
+  onToggleSnap45,
   t,
 }: {
   texts: TextOverlay[];
@@ -2387,6 +2409,8 @@ function TextSettingsPanel({
   updateText: (id: string, patch: Partial<TextOverlay>) => void;
   deleteText: (id: string) => void;
   selectText: (id: string | null) => void;
+  snap45: boolean;
+  onToggleSnap45: () => void;
   t: (key: StringKey) => string;
 }) {
   const selected = texts.find((x) => x.id === selectedTextId) ?? null;
@@ -2497,12 +2521,26 @@ function TextSettingsPanel({
             </ColorPickerSketch>
           </ControlRow>
           <ControlRow label={`${t("rotation")} — ${selected.rotation}°`}>
-            <StyledSlider
-              min={0}
-              max={360}
-              value={selected.rotation}
-              onChange={(v) => updateText(selected.id, { rotation: v })}
-            />
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <StyledSlider
+                  min={0}
+                  max={360}
+                  value={selected.rotation}
+                  onChange={(v) => updateText(selected.id, { rotation: snap45 ? Math.round(v / 45) * 45 : v })}
+                />
+              </div>
+              <button
+                onClick={onToggleSnap45}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all duration-150 active:scale-[0.96] cursor-pointer border shrink-0 ${
+                  snap45
+                    ? "bg-[#49c5b6] text-white border-[#49c5b6]"
+                    : "bg-muted text-muted-foreground border-border hover:text-foreground"
+                }`}
+              >
+                {t("snap45")}
+              </button>
+            </div>
           </ControlRow>
           <ControlRow label={t("shadow")}>
             <div className="flex items-center gap-3 pl-0.5">
@@ -2576,6 +2614,8 @@ function MobileSettingsPanel({
   updateText,
   deleteText,
   selectText,
+  snap45,
+  onToggleSnap45,
 }: {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
@@ -2590,13 +2630,15 @@ function MobileSettingsPanel({
   updateText: (id: string, patch: Partial<TextOverlay>) => void;
   deleteText: (id: string) => void;
   selectText: (id: string | null) => void;
+  snap45: boolean;
+  onToggleSnap45: () => void;
 }) {
   return (
     <div
       className="shrink-0 flex flex-col bg-card border-t border-border"
       style={{ boxShadow: "0 -1px 3px rgba(0,0,0,0.06), 0 -4px 16px rgba(0,0,0,0.04)" }}
     >
-      <div className="overflow-y-auto px-4 py-3" style={{ maxHeight: "35vh" }}>
+      <div className="overflow-y-auto px-4 py-3" style={{ maxHeight: "35dvh" }}>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={activeTab}
@@ -2625,6 +2667,8 @@ function MobileSettingsPanel({
                 updateText={updateText}
                 deleteText={deleteText}
                 selectText={selectText}
+                snap45={snap45}
+                onToggleSnap45={onToggleSnap45}
                 t={t}
               />
             )}

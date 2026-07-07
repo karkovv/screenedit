@@ -74,6 +74,7 @@ export const strings = {
   fontSizeLabel: { en: "Size", ru: "Размер" },
   textColor: { en: "Color", ru: "Цвет" },
   rotation: { en: "Rotation", ru: "Поворот" },
+  snap45: { en: "Snap 45°", ru: "Шаг 45°" },
   deleteText: { en: "Delete text", ru: "Удалить текст" },
   noTextSelected: { en: "Click text on preview to edit", ru: "Нажмите на текст в превью чтобы редактировать" },
   clickToAddText: { en: "Click «Add text» to place one", ru: "Нажмите «Добавить текст»" },
