@@ -982,6 +982,14 @@ export default function App() {
                 >
                   <Redo2 className="w-3 h-3" />
                 </button>
+                <button
+                  onClick={() => setDownloadOpen((v) => !v)}
+                  disabled={!image}
+                  className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-25 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer"
+                  title={t("downloadStyledImage")}
+                >
+                  <Download className="w-3 h-3" />
+                </button>
                 {cropMode && (
                   <div className="flex items-center gap-1 ml-auto">
                     <button
@@ -1189,53 +1197,47 @@ export default function App() {
                 ) : null}
               </div>
 
-              {/* Actions */}
-              <div className="p-3 sm:p-4 shrink-0 border-t border-border">
-                {downloadOpen && (
-                  <div className="fixed inset-0 z-40" onClick={() => setDownloadOpen(false)} />
-                )}
-                <div className="relative z-50">
-                  <button
-                    onClick={() => setDownloadOpen((v) => !v)}
-                    disabled={!image}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-[opacity,filter,transform] disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.96] hover:brightness-90 cursor-pointer"
-                    style={{
-                      background: image
-                        ? "linear-gradient(135deg,#49c5b6,#3db5a7)"
-                        : "#49c5b6",
-                      boxShadow: image
-                        ? "0 2px 8px rgba(73,197,182,0.35)"
-                        : "none",
-                    }}
-                  >
-                    <Download className="w-4 h-4" />
-                    {t("downloadStyledImage")}
-                  </button>
-                  <AnimatePresence>
-                    {downloadOpen && (
-                      <motion.div
-                        className="absolute bottom-full left-0 right-0 mb-2 bg-card rounded-xl p-1.5 flex flex-col gap-0.5"
-                        style={{ boxShadow: "0 0 0 2px rgba(73,197,182,0.3), 0 4px 16px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.06)", transformOrigin: "bottom center" }}
-                        initial={{ opacity: 0, scale: 0.92, y: 6 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.92, y: 6 }}
-                        transition={{ type: "tween", duration: 0.2, ease: "easeOut" }}
-                      >
-                        {(["png", "jpeg", "webp"] as const).map((fmt) => (
-                          <button
-                            key={fmt}
-                            onClick={() => handleDownloadFormat(fmt)}
-                            className="flex items-center justify-center px-3 py-2.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 active:scale-[0.96] cursor-pointer"
-                          >
-                            <span className="uppercase font-semibold text-[10px] tracking-wider min-w-[36px]">{fmt}</span>
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </div>
             </div>
+
+            {/* Download format popup */}
+            <AnimatePresence>
+              {downloadOpen && (
+                <>
+                  <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setDownloadOpen(false)} />
+                  <motion.div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-6"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.15 }}
+                  >
+                    <motion.div
+                      className="bg-card rounded-2xl p-6 w-full max-w-[320px] flex flex-col gap-3"
+                      style={{ boxShadow: "0 0 0 2px rgba(73,197,182,0.3), 0 8px 32px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.06)" }}
+                      initial={{ opacity: 0, scale: 0.92, y: 12 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.92, y: 12 }}
+                      transition={{ type: "spring", duration: 0.35, bounce: 0.15 }}
+                    >
+                      <p className="text-sm font-semibold text-foreground text-center">{t("downloadStyledImage")}</p>
+                      {(["png", "jpeg", "webp"] as const).map((fmt) => (
+                        <button
+                          key={fmt}
+                          onClick={() => handleDownloadFormat(fmt)}
+                          className="flex items-center justify-center px-5 py-3.5 rounded-xl text-sm font-semibold text-white transition-all duration-150 active:scale-[0.96] hover:brightness-90 cursor-pointer"
+                          style={{
+                            background: "linear-gradient(135deg,#49c5b6,#3db5a7)",
+                            boxShadow: "0 2px 8px rgba(73,197,182,0.3)",
+                          }}
+                        >
+                          <span className="uppercase tracking-wider">{fmt}</span>
+                        </button>
+                      ))}
+                    </motion.div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
 
             {/* Mobile bottom settings panel */}
             <MobileSettingsPanel
