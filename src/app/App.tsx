@@ -2461,7 +2461,7 @@ function TextSettingsPanel({
               value={selected.text}
               onChange={(e) => updateText(selected.id, { text: e.target.value })}
               rows={2}
-              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground resize-none"
+              className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-base text-foreground resize-none"
             />
           </ControlRow>
           <ControlRow label={t("fontFamily")}>
