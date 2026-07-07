@@ -248,16 +248,16 @@ export default function App() {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(async () => {
       const c = document.createElement("canvas");
-      await renderToCanvas(c, 0.5, !textMode);
+      await renderToCanvas(c, 0.5, false);
       if (version !== renderVersion.current) return;
       setPreviewUrl(c.toDataURL("image/png"));
     });
     return () => cancelAnimationFrame(rafRef.current);
-  }, [image, settings, bitmapVersion, texts, textMode]);
+  }, [image, settings, bitmapVersion]);
 
   // Track preview image display size for text overlay positioning
   useEffect(() => {
-    if (!previewUrl || !previewImgRef.current) { setPreviewImgSize(null); return; }
+    if (!previewUrl || !previewImgRef.current) return;
     const img = previewImgRef.current;
     let raf = 0;
     const update = () => {
@@ -684,18 +684,22 @@ export default function App() {
     return () => document.removeEventListener("paste", onPaste);
   }, [handleFile]);
 
-  // Close popups on Escape
+  // Close popups and text mode on Escape
   useEffect(() => {
-    if (!donationOpen && !downloadOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setDonationOpen(false);
-        setDownloadOpen(false);
+        if (donationOpen || downloadOpen) {
+          setDonationOpen(false);
+          setDownloadOpen(false);
+        } else if (textMode) {
+          setTextMode(false);
+          setSelectedTextId(null);
+        }
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [donationOpen, downloadOpen]);
+  }, [donationOpen, downloadOpen, textMode]);
 
   const handleUndo = useCallback(() => {
     if (undoStack.current.length === 0) return;
@@ -838,7 +842,10 @@ export default function App() {
   }, [image, completedCrop, settings]);
 
   const toggleCropMode = useCallback(() => {
-    if (textMode) return;
+    if (textMode) {
+      setTextMode(false);
+      setSelectedTextId(null);
+    }
     setCrop(undefined);
     setCompletedCrop(undefined);
     setCropMode((v) => !v);
@@ -928,14 +935,9 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => {
-                    if (!textMode) {
-                      setCropMode(false);
-                      setTextMode(true);
-                      addText();
-                    } else {
-                      setTextMode(false);
-                      setSelectedTextId(null);
-                    }
+                    setCropMode(false);
+                    setTextMode(true);
+                    addText();
                   }}
                   disabled={!image}
                   className={`flex items-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer ${
@@ -1011,7 +1013,7 @@ export default function App() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={onDrop}
-                onPointerDown={() => { if (textMode) selectText(null); }}
+                onPointerDown={() => { if (textMode) { setTextMode(false); setSelectedTextId(null); } }}
               >
                 {!image && (
                   <label
@@ -1080,60 +1082,58 @@ export default function App() {
                         draggable={false}
                         className="relative z-0 select-none"
                         style={{
-                          maxWidth: "100%",
-                          maxHeight: "100%",
-                          objectFit: "contain",
-                          display: "block",
+                          maxWidth: "100%", maxHeight: "100%",
+                          objectFit: "contain", display: "block",
                         }}
                       />
-                      {textMode &&
-                        texts.map((t) => {
-                          const fallbackW = previewContainerRef.current?.clientWidth
-                            ? Math.min(previewContainerRef.current.clientWidth, settings.bgWidth * 0.5)
-                            : settings.bgWidth * 0.5;
-                          const fallbackH = previewContainerRef.current?.clientHeight
-                            ? Math.min(previewContainerRef.current.clientHeight, settings.bgHeight * 0.5)
-                            : settings.bgHeight * 0.5;
-                          const sX = settings.bgWidth * 0.5;
-                          const sY = settings.bgHeight * 0.5;
-                          const sx = previewImgSize ? previewImgSize.w / sX : fallbackW / sX;
-                          const sy = previewImgSize ? previewImgSize.h / sY : fallbackH / sY;
-                          const domX = t.x * 0.5 * sx;
-                          const domY = t.y * 0.5 * sy;
-                          const domFs = t.fontSize * 0.5 * sx;
-                          const isSelected = t.id === selectedTextId;
-                          return (
-                            <div
-                              key={t.id}
-                              className="absolute cursor-pointer select-none whitespace-pre leading-none"
-                              draggable={false}
-                              onDragStart={(e) => e.preventDefault()}
-                              style={{
-                                left: domX,
-                                top: domY,
-                                transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
-                                fontSize: domFs,
-                                fontFamily: `"${t.fontFamily}", sans-serif`,
-                                fontWeight: t.fontWeight,
-                                fontStyle: t.fontStyle,
-                                color: t.color,
-                                textShadow: isSelected
-                                  ? t.textShadowEnabled
-                                    ? `0 0 4px rgba(73,197,182,0.8), ${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
-                                    : "0 0 4px rgba(73,197,182,0.8)"
-                                  : t.textShadowEnabled
-                                    ? `${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
-                                    : "none",
-                                border: isSelected ? "1px dashed rgba(73,197,182,0.7)" : "1px solid transparent",
-                                padding: "2px 4px",
-                                borderRadius: 4,
-                                zIndex: isSelected ? 20 : 10,
-                                touchAction: "none",
-                              }}
-                              onPointerDown={(e) => {
-                                const handle = (e.target as HTMLElement).dataset.handle;
-                                if (handle) { handleTextResizeDown(e, t.id, handle); }
-                                else { handleTextPointerDown(e, t.id); }
+                      {texts.map((t) => {
+                        const fallbackW = previewContainerRef.current?.clientWidth
+                          ? Math.min(previewContainerRef.current.clientWidth, settings.bgWidth * 0.5)
+                          : settings.bgWidth * 0.5;
+                        const fallbackH = previewContainerRef.current?.clientHeight
+                          ? Math.min(previewContainerRef.current.clientHeight, settings.bgHeight * 0.5)
+                          : settings.bgHeight * 0.5;
+                        const sX = settings.bgWidth * 0.5;
+                        const sY = settings.bgHeight * 0.5;
+                        const sx = previewImgSize ? previewImgSize.w / sX : fallbackW / sX;
+                        const sy = previewImgSize ? previewImgSize.h / sY : fallbackH / sY;
+                        const domX = t.x * 0.5 * sx;
+                        const domY = t.y * 0.5 * sy;
+                        const domFs = t.fontSize * 0.5 * sx;
+                        const isSelected = t.id === selectedTextId;
+                        return (
+                          <div
+                            key={t.id}
+                            className="absolute cursor-pointer select-none whitespace-pre leading-none"
+                            draggable={false}
+                            onDragStart={(e) => e.preventDefault()}
+                            style={{
+                              left: domX,
+                              top: domY,
+                              transform: `translate(-50%, -50%) rotate(${t.rotation}deg)`,
+                              fontSize: domFs,
+                              fontFamily: `"${t.fontFamily}", sans-serif`,
+                              fontWeight: t.fontWeight,
+                              fontStyle: t.fontStyle,
+                              color: t.color,
+                              textShadow: isSelected
+                                ? t.textShadowEnabled
+                                  ? `0 0 4px rgba(73,197,182,0.8), ${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
+                                  : "0 0 4px rgba(73,197,182,0.8)"
+                                : t.textShadowEnabled
+                                  ? `${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
+                                  : "none",
+                              border: isSelected ? "1px dashed rgba(73,197,182,0.7)" : "1px solid transparent",
+                              padding: "2px 4px",
+                              borderRadius: 4,
+                              zIndex: isSelected ? 20 : 10,
+                              touchAction: "none",
+                            }}
+                            onPointerDown={(e) => {
+                              if (!textMode) { e.stopPropagation(); setCropMode(false); setTextMode(true); selectText(t.id); return; }
+                              const handle = (e.target as HTMLElement).dataset.handle;
+                              if (handle) { handleTextResizeDown(e, t.id, handle); }
+                              else { handleTextPointerDown(e, t.id); }
                               }}
                               onPointerMove={handleTextPointerMove}
                               onPointerUp={handleTextPointerUp}
@@ -1413,14 +1413,9 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => {
-                    if (!textMode) {
-                      setCropMode(false);
-                      setTextMode(true);
-                      addText();
-                    } else {
-                      setTextMode(false);
-                      setSelectedTextId(null);
-                    }
+                    setCropMode(false);
+                    setTextMode(true);
+                    addText();
                   }}
                   disabled={!image}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.96] cursor-pointer ${
@@ -1496,7 +1491,7 @@ export default function App() {
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={onDrop}
-                onPointerDown={() => { if (textMode) selectText(null); }}
+                onPointerDown={() => { if (textMode) { setTextMode(false); setSelectedTextId(null); } }}
               >
                 {cropMode && cropPreviewSrc ? (
                   <div className="absolute inset-[32px] grid place-items-center" style={{ gridTemplateRows: "1fr", gridTemplateColumns: "1fr" }}>
@@ -1523,14 +1518,11 @@ export default function App() {
                       draggable={false}
                       className="relative z-0 select-none"
                       style={{
-                        maxWidth: "100%",
-                        maxHeight: "100%",
-                        objectFit: "contain",
-                        display: "block",
+                        maxWidth: "100%", maxHeight: "100%",
+                        objectFit: "contain", display: "block",
                       }}
                     />
-                    {textMode &&
-                      texts.map((t) => {
+                    {texts.map((t) => {
                         const fallbackW = previewContainerRef.current?.clientWidth
                           ? Math.min(previewContainerRef.current.clientWidth, settings.bgWidth * 0.5)
                           : settings.bgWidth * 0.5;
@@ -1562,10 +1554,10 @@ export default function App() {
                               color: t.color,
                               textShadow: isSelected
                                 ? t.textShadowEnabled
-                                  ? `0 0 4px rgba(73,197,182,0.8), ${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${t.shadowColor}`
+                                  ? `0 0 4px rgba(73,197,182,0.8), ${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
                                   : "0 0 4px rgba(73,197,182,0.8)"
                                 : t.textShadowEnabled
-                                  ? `${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${t.shadowColor}`
+                                  ? `${t.shadowOffsetX}px ${t.shadowOffsetY}px ${t.shadowBlur}px ${shadowRgba(t.shadowColor, t.shadowOpacity)}`
                                   : "none",
                               border: isSelected ? "1px dashed rgba(73,197,182,0.7)" : "1px solid transparent",
                               padding: "2px 4px",
@@ -1573,6 +1565,7 @@ export default function App() {
                               zIndex: isSelected ? 20 : 10,
                             }}
                             onPointerDown={(e) => {
+                              if (!textMode) { e.stopPropagation(); setCropMode(false); setTextMode(true); selectText(t.id); return; }
                               const handle = (e.target as HTMLElement).dataset.handle;
                               if (handle) { handleTextResizeDown(e, t.id, handle); }
                               else { handleTextPointerDown(e, t.id); }
@@ -2423,6 +2416,17 @@ function TextSettingsPanel({
           ))}
         </div>
       )}
+      <button
+        onClick={addText}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-all duration-150 active:scale-[0.96] cursor-pointer self-start"
+        style={{
+          background: "linear-gradient(135deg,#49c5b6,#3db5a7)",
+          boxShadow: "0 1px 3px rgba(73,197,182,0.3)",
+        }}
+      >
+        <Type className="w-3 h-3" />
+        {t("addText")}
+      </button>
       {selected && (
         <div className="flex flex-col gap-4">
           <ControlRow label={t("enterText")}>
